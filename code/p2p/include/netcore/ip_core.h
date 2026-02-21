@@ -194,5 +194,30 @@ int netfd_wait(nnet_fd fd, int events, int timeout){
     return poll(fds, 1, timeout);
 }
 
+naddr_t naddr_from_uint32(uint32_t ip_bin, uint16_t port) {
+    naddr_t addr;
+    memset(&addr, 0, sizeof(addr));
+    
+    addr.t = nADDR_IPV4;
+    addr.ip.v4.port = port;
+
+    if (inet_ntop(AF_INET, &ip_bin, addr.ip.v4.ip, INET_ADDRSTRLEN) == NULL) {
+        addr.ip.v4.ip[0] = '\0';
+    }
+    
+    return addr;
+}
+
+uint32_t naddr_to_uint32(naddr_t addr) {
+    if (addr.t != nADDR_IPV4) return 0;
+
+    uint32_t ip_bin;
+    if (inet_pton(AF_INET, addr.ip.v4.ip, &ip_bin) <= 0) {
+        return 0;
+    }
+    
+    return ip_bin; 
+}
+
 #endif
 #define P2PNETCORE_IP_ADDR

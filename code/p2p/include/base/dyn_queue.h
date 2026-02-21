@@ -17,10 +17,17 @@ int dyn_queue_push(dyn_queue *q, const void *element){
 }
 
 int dyn_queue_pop(dyn_queue *q, void **elem){
-    if (q->arr.len == 0) return -1;
-    *elem = dyn_array_at(&q->arr, 0);
-
-    return dyn_array_remove(&q->arr, 0);
+    if (q->arr.len == 0) {
+        return -1;
+    }
+    
+    memcpy(elem, 
+           ((char*)q->arr.elements), 
+           q->arr.element_size
+    );
+    
+    dyn_array_remove(&q->arr, 0);
+    return 0;
 }
 
 void* dyn_queue_peek(dyn_queue *q) {

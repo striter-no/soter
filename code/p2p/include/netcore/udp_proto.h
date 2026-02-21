@@ -18,12 +18,16 @@ static uint32_t crc32(const void *data, size_t n_bytes) {
     return ~crc;
 }
 
-typedef enum { // :uint8_t
+typedef enum: uint8_t {
     P2P_PACK_DATA,
     P2P_PACK_ACK,
     P2P_PACK_PING,
     P2P_PACK_PONG,
-    P2P_PACK_PUNCH
+    P2P_PACK_PUNCH,
+    P2P_PACK_GOSSIP,
+    P2P_PACK_HELLO,
+    P2P_PACK_REJECT,
+    P2P_PACK_ACCEPT
 } udp_pack_type;
 
 #pragma pack(push, 1)

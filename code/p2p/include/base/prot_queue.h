@@ -25,10 +25,22 @@ int prot_queue_push(prot_queue *q, const void *element){
 }
 
 int prot_queue_pop(prot_queue *q, void **elem){
-    if (q->arr.array.len == 0) return -1;
-    *elem = prot_array_at(&q->arr, 0);
-
-    return prot_array_remove(&q->arr, 0);
+    pthread_mutex_lock(&q->arr.mtx); 
+    
+    if (q->arr.array.len == 0) {
+        pthread_mutex_unlock(&q->arr.mtx);
+        return -1;
+    }
+    
+    memcpy(elem, 
+           ((char*)q->arr.array.elements), 
+           q->arr.array.element_size
+    );
+    
+    dyn_array_remove(&q->arr.array, 0);
+    
+    pthread_mutex_unlock(&q->arr.mtx);
+    return 0;
 }
 
 void* prot_queue_peek(prot_queue *q) {

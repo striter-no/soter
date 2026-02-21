@@ -66,10 +66,35 @@ int dyn_array_remove(dyn_array *array, size_t index){
     return 0;
 }
 
+int dyn_array_count(dyn_array *array, const void *element){
+    if (!array) return 0;
+
+    int count = 0;
+    for (size_t i = 0; i < array->len; i++){
+        if (memcmp(element, ((char*)array->elements) + i * array->element_size, array->element_size) != 0) 
+            count++;
+    }
+
+    return count;
+}
+
 void *dyn_array_at(dyn_array *array, size_t index){
     if (!array || array->len <= index) return NULL;
 
     return ((char*)array->elements) + index * array->element_size;
+}
+
+void dyn_array_setself(dyn_array *array){
+    if (!array) return;
+
+    for (size_t i = 0; i < array->len;){
+        if (dyn_array_count(array, dyn_array_at(array, i)) > 1){
+            dyn_array_remove(array, i);
+            continue;
+        }
+
+        i++;
+    }
 }
 
 void dyn_array_end(dyn_array *array){

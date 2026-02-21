@@ -1,4 +1,3 @@
-#include <bits/pthreadtypes.h>
 #include <pthread.h>
 #include "dyn_array.h"
 
@@ -56,6 +55,19 @@ int prot_array_remove(prot_array *array, size_t index){
     int r = dyn_array_remove(&array->array, index);
     pthread_mutex_unlock(&array->mtx);
     return r;
+}
+
+int prot_array_count(prot_array *array, const void *element){
+    pthread_mutex_lock(&array->mtx);
+    int r = dyn_array_count(&array->array, element);
+    pthread_mutex_unlock(&array->mtx);
+    return r;
+}
+
+void prot_array_setself(prot_array *array){
+    pthread_mutex_lock(&array->mtx);
+    dyn_array_setself(&array->array);
+    pthread_mutex_unlock(&array->mtx);
 }
 
 void prot_array_end(prot_array *array){
