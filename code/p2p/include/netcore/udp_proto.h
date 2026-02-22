@@ -89,6 +89,7 @@ udp_packet *udp_make_pack(
 }
 
 udp_packet *udp_copy_pack(udp_packet *pk, bool apply_ntoh){
+    // printf("copying %u size\n", pk->d_size);
     udp_packet *out = malloc(sizeof(udp_packet) + (apply_ntoh ? ntohl(pk->d_size): pk->d_size));
     out->chsum    = apply_ntoh ? ntohl(pk->chsum): pk->chsum;
     out->magic    = apply_ntoh ? ntohl(pk->magic): pk->magic;
@@ -99,6 +100,20 @@ udp_packet *udp_copy_pack(udp_packet *pk, bool apply_ntoh){
     out->packtype = pk->packtype;
     if (out->d_size != 0) memcpy(out->data, pk->data, out->d_size);
 
+    return out;
+}
+
+udp_packet *retranslate_udp(udp_packet *pk, int to_net){
+    udp_packet *out = udp_copy_pack(pk, to_net == 0);
+    if (to_net){
+        out->chsum    = htonl(pk->chsum);
+        out->magic    = htonl(pk->magic);
+        out->seq      = htonl(pk->seq);
+        out->d_size   = htonl(pk->d_size);
+        out->h_from   = htonl(pk->h_from);
+        out->h_to     = htonl(pk->h_to);
+        out->packtype = pk->packtype;
+    }
     return out;
 }
 

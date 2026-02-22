@@ -81,6 +81,10 @@ int main(void){
     evfd_wait(statfd, POLLIN, -1);
 
     p2p_peer *act_peer = p2p_psystem_peer(&psyst, other_uid);
+    if (!act_peer) {
+        printf("[main] failed to get peer\n");
+        return -1;
+    }
     printf("[main] got connected active peer: %u\n", act_peer->peer_id);
 
     // --- after connection

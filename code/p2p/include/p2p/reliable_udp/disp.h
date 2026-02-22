@@ -7,6 +7,10 @@
 #define RUDP_TIMEOUT 5
 #endif
 
+#ifndef RUDP_RETRANSMISSION_CAP
+#define RUDP_RETRANSMISSION_CAP 10
+#endif
+
 #ifndef P2P_RUDP_DISPATCHER
 
 int p2p_rudp_chan_newpack(
@@ -19,7 +23,7 @@ int p2p_rudp_chan_newpack(
 
     p2p_rudp_pending_pkt pkt = {
         .seq = chan->next_seq,
-        // .real_pack = packet,
+        .copy_pack = udp_copy_pack(packet, true),
         .retransmit_count = 0,
         .state = P2P_RUDP_STATE_INITED,
         .timestamp = get_timestump()
@@ -98,12 +102,81 @@ int p2p_rudpdisp_init(
     return 0;
 }
 
+static void p2p_rudp_check_chtimeouts(
+    p2p_udp *cli, 
+    p2p_rudp_channel *chan, 
+    p2p_peers_system *psys
+){
+    prot_array_lock(&chan->pending_queue);
+    
+    uint32_t currt = get_timestump();
+    for (size_t i = 0; i < chan->pending_queue.array.len;){
+        p2p_rudp_pending_pkt *pkt = dyn_array_at(
+            &chan->pending_queue.array, i
+        );
+
+        if (pkt->retransmit_count >= RUDP_RETRANSMISSION_CAP){
+            free(pkt->copy_pack);
+            dyn_array_remove(&chan->pending_queue.array, i);
+            printf("[rudpdisp] retransmission cap hit\n");
+            continue;
+        }
+
+        if (currt - pkt->timestamp >= RUDP_TIMEOUT){
+            uint32_t peer_id = pkt->copy_pack->h_to;
+            p2p_peer *p = p2p_psystem_peer(psys, peer_id);
+            if (!p) {
+                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                free(pkt->copy_pack);
+                dyn_array_remove(&chan->pending_queue.array, i);
+                continue;
+            }
+            udp_pack_send(cli, retranslate_udp(pkt->copy_pack, 1), p->fd);
+            pkt->timestamp = currt;
+            pkt->retransmit_count++;
+            i++;
+            printf("[rudpdisp] rentrasmissing packet...\n");
+            continue;
+        } else if (pkt->retransmit_count == 0){
+            // first sending ever
+            
+            uint32_t peer_id = pkt->copy_pack->h_to;
+            p2p_peer *p = p2p_psystem_peer(psys, peer_id);
+            if (!p) {
+                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                free(pkt->copy_pack);
+                dyn_array_remove(&chan->pending_queue.array, i);
+                continue;
+            }
+
+            pkt->seq = chan->next_seq;
+            udp_pack_send(cli, retranslate_udp(pkt->copy_pack, 1), p->fd);
+            chan->next_seq++;
+            i++;
+        }
+    }
+
+    prot_array_unlock(&chan->pending_queue);
+}
+
+static void p2p_rudp_check_timeouts(p2p_rudp_dispatcher *disp){
+    prot_table_lock(&disp->channels);
+    for (size_t i = 0; i < disp->channels.table.array.len; i++){
+        dyn_pair *p = dyn_array_at(&disp->channels.table.array, i);
+        p2p_rudp_check_chtimeouts(disp->client, p->second, disp->psys);
+    }
+    prot_table_unlock(&disp->channels);
+}
+
 static void *p2p_rudpdisp_senderworker(void *_args){
     p2p_rudp_dispatcher *disp = _args;
     
     printf("[thread] p2p_rudpdisp_senderworker start\n");
     while (atomic_load(&disp->is_active)){
         int r = evfd_wait(disp->outgoing_fd, POLLIN, 100);
+
+        p2p_rudp_check_timeouts(disp);
+
         if (r <= 0) continue;
 
         udp_packet *pkt;
@@ -140,14 +213,9 @@ static void *p2p_rudpdisp_senderworker(void *_args){
         }
 
         // теперь пакет в pending_queue, sended_fd тригернут
+        printf("[rudisp] just SENT packet with SEQ %u\n", chan->next_seq);
         p2p_rudp_chan_newpack(chan, pkt, peer_id);
-        // writing actual data
-
-        pkt->seq = chan->next_seq;
-        udp_pack_send(disp->client, pkt, p->fd);
-        chan->next_seq++;
-
-        printf("[rudisp] just SENT packet with SEQ %u\n", chan->next_seq - 1);
+        free(pkt);
     }
     printf("[thread] p2p_rudpdisp_senderworker end\n");
 
@@ -211,7 +279,7 @@ static void *p2p_rudpdisp_worker(void *_args){
                     printf("[rudisp][ack] acked in channel %u, seq %u\n", peer_id, ppkt->seq);
                     chan->last_ack_received = pkt->seq;
 
-                    // free(ppkt->real_pack);
+                    free(ppkt->copy_pack);
                     prot_array_remove(&chan->pending_queue, i);
                     was_ack = true;
                     break;

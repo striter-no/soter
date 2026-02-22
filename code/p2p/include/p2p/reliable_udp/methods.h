@@ -17,7 +17,7 @@ typedef struct {
     uint32_t            seq;
     uint32_t            timestamp;
     int                 retransmit_count;
-    // udp_packet         *real_pack;
+    udp_packet         *copy_pack;
     p2p_rudp_pkt_state  state;
 } p2p_rudp_pending_pkt;
 
