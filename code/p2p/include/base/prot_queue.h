@@ -24,7 +24,7 @@ int prot_queue_push(prot_queue *q, const void *element){
     return prot_array_push(&q->arr, element);
 }
 
-int prot_queue_pop(prot_queue *q, void **elem){
+int prot_queue_pop(prot_queue *q, void *elem){
     pthread_mutex_lock(&q->arr.mtx); 
     
     if (q->arr.array.len == 0) {
@@ -32,10 +32,8 @@ int prot_queue_pop(prot_queue *q, void **elem){
         return -1;
     }
     
-    memcpy(elem, 
-           ((char*)q->arr.array.elements), 
-           q->arr.array.element_size
-    );
+    if (elem)
+        memcpy(elem, ((char*)q->arr.array.elements), q->arr.array.element_size);
     
     dyn_array_remove(&q->arr.array, 0);
     

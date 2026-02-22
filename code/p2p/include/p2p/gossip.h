@@ -6,11 +6,13 @@
 
 #ifndef P2P_GOSSIP
 
+#pragma pack(push, 1)
 typedef struct {
     uint32_t uid;
     uint32_t ip;
     uint16_t port;
 } gossip_entry;
+#pragma pack(pop)
 
 typedef struct {
     prot_array gossips;

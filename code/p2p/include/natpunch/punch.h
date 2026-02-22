@@ -1,5 +1,4 @@
 #include <netcore/udp_proto.h>
-#include <crypto/murmur.h>
 #include "stun.h"
 
 #ifndef P2P_NATPUNCH_PUNCH

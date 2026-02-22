@@ -4,18 +4,21 @@
 #ifndef P2P_DISPATCHER
 
 int p2p_dispatcher_init(
-    p2p_dispatcher *dispatcher,
-    p2p_listener   *listener,
-    p2p_peers_system *psyst,
-    gossip_system    *gossip
+    p2p_dispatcher      *dispatcher,
+    p2p_listener        *listener,
+    p2p_peers_system    *psyst,
+    gossip_system       *gossip,
+    p2p_rudp_dispatcher *rudp_disp
 ){
     if (!dispatcher || !listener || 
-        !psyst      || !gossip     ) return -1;
+        !psyst      || !gossip   ||
+        !rudp_disp                 ) return -1;
 
-    dispatcher->listener = listener;
-    dispatcher->p_client = listener->p_client;
-    dispatcher->psys     = psyst;
-    dispatcher->gossip   = gossip;
+    dispatcher->listener  = listener;
+    dispatcher->p_client  = listener->p_client;
+    dispatcher->psys      = psyst;
+    dispatcher->gossip    = gossip;
+    dispatcher->rudp_disp = rudp_disp;
     dispatcher->last_gossiping = 0;
 
     return 0;
@@ -55,7 +58,7 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
     if (get_timestump() - disp->last_gossiping < GOSSIP_DT)
         return;
 
-    printf("[gossip] starting gossiping\n");
+    // printf("[gossip] starting gossiping\n");
     prot_table_lock(&psys->peers);
     for (size_t i = 0; i < psys->peers.table.array.len; i++){
         dyn_pair *p = dyn_array_at(&psys->peers.table.array, i);
@@ -69,14 +72,14 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
         udp_pack_send(cli, gs_pck, peer->fd);
     }
     prot_table_unlock(&psys->peers);
-    printf("[gossip] end\n");
+    // printf("[gossip] end\n");
 
     disp->last_gossiping = get_timestump();
 }
 
 void *p2p_dispatcher_worker(void *_args){
     
-    void *methods[9] = {
+    void *methods[] = {
         NULL, // disp_method_data     // 0
         disp_method_ack,              // 1
         disp_method_ping,             // 2
@@ -85,7 +88,8 @@ void *p2p_dispatcher_worker(void *_args){
         disp_method_gossip,           // 5
         NULL, // disp_method_hello    // 6
         NULL, // disp_method_reject   // 7
-        NULL  // disp_method_accept   // 8
+        NULL, // disp_method_accept   // 8
+        NULL  // (STATE)              // 9
     };
     
     p2p_dispatcher *disp = _args;
@@ -117,6 +121,13 @@ void *p2p_dispatcher_worker(void *_args){
         
         if (!pkt) continue;
         // printf("[disp] packtype: %u\n", (uint8_t)pkt->packtype);
+        
+        if (udp_is_RUDP_req(pkt->packtype)){
+            printf("[disp] passing packet to RUDP dispatcher\n");
+            p2p_rudpdisp_pass(disp->rudp_disp, pkt);
+            continue;
+        }
+        
         void *method = methods[(uint8_t)pkt->packtype];
         if (method){
             (DISPATCHER_METHOD method)(pkt, disp, cli);
@@ -131,6 +142,7 @@ void *p2p_dispatcher_worker(void *_args){
 }
 
 void p2p_dispatcher_end(p2p_dispatcher *dispatcher){
+    p2p_rudpdisp_end(dispatcher->rudp_disp);
     atomic_store(&dispatcher->is_active, false);
     pthread_join(dispatcher->main_thread, NULL);
 }
@@ -144,6 +156,8 @@ int p2p_dispatcher_start(p2p_dispatcher *dispatcher){
         &p2p_dispatcher_worker,
         dispatcher
     );
+
+    p2p_rudpdisp_run(dispatcher->rudp_disp);
 
     return r;
 }

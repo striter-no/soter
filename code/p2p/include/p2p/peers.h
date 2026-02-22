@@ -56,19 +56,22 @@ int p2p_psystem_init(
     return 0;
 }
 
-int p2p_psystem_stunperform(
+int p2p_psystem_gnattype(
     p2p_peers_system *sys,
     naddr_t           stun1,
     naddr_t           stun2,
-    unsigned short    port,
-    bool              perf_nattype
+    unsigned short    port
 ){
-    if (perf_nattype) sys->nat_type = get_nat_type(sys->p_client, stun1, stun2, port);
-    return p2pnp_udp_stun(
-        sys->p_client, 
-        port % 2 == 0 ? stun1: stun2, 
-        &sys->p_client->addr
-    );
+    sys->nat_type = get_nat_type(sys->p_client, stun1, stun2, port);
+    return 0;
+}
+
+int p2p_psystem_stunperform(
+    p2p_peers_system *sys,
+    naddr_t           stun,
+    unsigned short    port
+){
+    return p2pnp_udp_stun(sys->p_client, stun);
 }
 
 // * send punch message
@@ -82,10 +85,9 @@ int p2p_psystem_punchnat(
     peer->fd = (nnet_fd){0};
     for (int i = 0; i < packs_n; i++){
         p2pnp_udp_punch(sys->p_client, peer_addr, sys->p_client->UID, &peer->fd);
+        sleep(1);
     }
 
-    naddr_t addr = naddr_nfd2str(peer->fd);
-    // printf("[...][punch] fd: %s:%u", addr.ip.v4.ip, addr.ip.v4.port);
     peer->peer_id   = peer_uid;
     peer->last_seen = 0;
     peer->status    = P2P_STAT_PUNCHING;
@@ -95,6 +97,28 @@ int p2p_psystem_punchnat(
     prot_array_push(&sys->pushing_peers, peer);
 
     return 0;
+}
+
+int p2p_peer_register(
+    p2p_peers_system *sys,
+    naddr_t           peer_addr,
+    uint32_t          peer_uid,
+    p2p_status        status
+){
+    if (!sys) return -1;
+
+    p2p_peer peer;
+    peer.peer_id   = peer_uid;
+    peer.last_seen = 0;
+    peer.status    = status;
+    peer.last_seq  = 0;
+    peer.fd        = netfdq(peer_addr);
+
+    // add to pending
+    if (status == P2P_STAT_PUNCHING)
+        return prot_array_push(&sys->pushing_peers, &peer);
+    else 
+        return prot_table_set(&sys->peers, &peer_uid, &peer);
 }
 
 p2p_peer *p2p_psystem_Ppeer(

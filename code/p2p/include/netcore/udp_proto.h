@@ -1,6 +1,7 @@
 #include "udp_sock.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #ifndef P2P_UDP_PROTO
 #define P2P_UDP_MAGIC 0x45503250
@@ -19,16 +20,33 @@ static uint32_t crc32(const void *data, size_t n_bytes) {
 }
 
 typedef enum: uint8_t {
-    P2P_PACK_DATA,
-    P2P_PACK_ACK,
-    P2P_PACK_PING,
-    P2P_PACK_PONG,
-    P2P_PACK_PUNCH,
-    P2P_PACK_GOSSIP,
-    P2P_PACK_HELLO,
-    P2P_PACK_REJECT,
-    P2P_PACK_ACCEPT
+    P2P_PACK_DATA,      // RUDP
+    P2P_PACK_ACK,       // no RUDP (natpunching module)
+    P2P_PACK_PING,      // no RUDP (integrety doesnt matter)
+    P2P_PACK_PONG,      // no RUDP (integrety doesnt matter)
+    P2P_PACK_PUNCH,     // no RUDP (natpunching module)
+    P2P_PACK_GOSSIP,    // no RUDP (integrety doesnt matter)
+    P2P_PACK_HELLO,     // RUDP
+    P2P_PACK_REJECT,    // RUDP
+    P2P_PACK_ACCEPT,    // RUDP
+    P2P_PACK_STATE      // no RUDP
 } udp_pack_type;
+
+bool udp_is_RUDP_req(udp_pack_type type){
+    switch (type) {
+        case P2P_PACK_ACK:       return false;
+        case P2P_PACK_PING:      return false;
+        case P2P_PACK_PONG:      return false;
+        case P2P_PACK_PUNCH:     return false;
+        case P2P_PACK_GOSSIP:    return false;
+
+        case P2P_PACK_DATA:      return true;
+        case P2P_PACK_HELLO:     return true;
+        case P2P_PACK_REJECT:    return true;
+        case P2P_PACK_ACCEPT:    return true;
+    }
+    return false;
+}
 
 #pragma pack(push, 1)
 typedef struct {

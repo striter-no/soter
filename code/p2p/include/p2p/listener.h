@@ -45,8 +45,8 @@ static void *p2p_listener_worker(void *_args){
             continue;
         }
 
-        // naddr_t addr = naddr_nfd2str(remote);
-        // printf("[listener] incoming packet from %s:%u\n", addr.ip.v4.ip, addr.ip.v4.port);
+        naddr_t addr = naddr_nfd2str(remote);
+        printf("[listener] incoming packet from %s:%u\n", addr.ip.v4.ip, addr.ip.v4.port);
         // printf("[listener] PUSH: %p\n", incoming);
         prot_queue_push(&list->packets, &incoming);
         write(list->pack_eventfd, &v, sizeof(v));

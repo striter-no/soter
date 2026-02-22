@@ -21,8 +21,7 @@ struct stun_attr {
 
 int p2pnp_udp_stun(
     p2p_udp *client,
-    naddr_t  stun_addr,
-    naddr_t *client_ip
+    naddr_t  stun_addr
 ){
     struct stun_header req;
     req.type   = htons(STUN_BINDING_REQUEST);
@@ -71,7 +70,7 @@ int p2pnp_udp_stun(
             in.s_addr = htonl(ip);
             char *ip_str = inet_ntoa(in);
 
-            *client_ip = naddr_make4(nipv4(ip_str, port));
+            client->addr = naddr_make4(nipv4(ip_str, port));
             return 0;
         }
 

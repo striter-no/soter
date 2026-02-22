@@ -30,9 +30,11 @@ nat_type get_nat_type(
         client->fd.addr_len
     )) {perror("bind"); return NAT_SYMMETRIC; }
 
-    p2pnp_udp_stun(client, first_stun, &addr[0]);
+    p2pnp_udp_stun(client, first_stun);
+    addr[0] = client->addr;
     // sleep(1);
-    p2pnp_udp_stun(client, second_stun, &addr[1]);
+    p2pnp_udp_stun(client, second_stun);
+    addr[1] = client->addr;
 
     client->fd.addr = old_storage;
     client->fd.addr_len = old_len;

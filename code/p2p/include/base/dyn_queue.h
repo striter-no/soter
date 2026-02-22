@@ -16,15 +16,16 @@ int dyn_queue_push(dyn_queue *q, const void *element){
     return dyn_array_push(&q->arr, element);
 }
 
-int dyn_queue_pop(dyn_queue *q, void **elem){
+int dyn_queue_pop(dyn_queue *q, void *elem){
     if (q->arr.len == 0) {
         return -1;
     }
     
-    memcpy(elem, 
-           ((char*)q->arr.elements), 
-           q->arr.element_size
-    );
+    if (elem)
+        memcpy(elem, 
+            ((char*)q->arr.elements), 
+            q->arr.element_size
+        );
     
     dyn_array_remove(&q->arr, 0);
     return 0;

@@ -1,6 +1,7 @@
 #include <p2p/listener.h>
 #include <p2p/peers.h>
 #include <p2p/gossip.h>
+#include <p2p/reliable_udp/system.h>
 
 #ifndef P2P_DISPATCHER_STRUCTS
 
@@ -10,13 +11,12 @@ typedef struct {
     pthread_t    main_thread;
     atomic_bool  is_active;
     p2p_udp     *p_client;
+    uint32_t     last_gossiping;
 
-    
-    p2p_listener     *listener;
-    p2p_peers_system *psys;
-    gossip_system    *gossip;
-
-    uint32_t          last_gossiping;
+    p2p_rudp_dispatcher *rudp_disp;
+    p2p_listener        *listener;
+    p2p_peers_system    *psys;
+    gossip_system       *gossip;    
 } p2p_dispatcher;
 
 typedef enum {
