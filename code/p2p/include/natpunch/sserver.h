@@ -30,15 +30,6 @@ void p2p_state_peer2info(p2p_state_peer peer, naddr_t *addr, uint32_t *uid){
     *uid  = peer.uid;
 }
 
-int evfd_wait(int evfd, int events, int timeout){
-    struct pollfd fd[1] = {{.fd = evfd, .events = events}};
-    int r = poll(fd, 1, timeout);
-    if (r <= 0) return r;
-
-    uint64_t u;
-    read(evfd, &u, sizeof(u));
-    return r;
-}
 
 int p2p_udp_stateserv(
     p2p_listener  *list,

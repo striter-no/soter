@@ -123,7 +123,7 @@ bool disp_method_ping(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
     p2pnp_udp_pong(cli, other_ip, pkt->h_from, &remote_fd);
     peer->last_seen = get_timestump();
 
-    printf("[disp] got ping, ponging...\n");
+    // printf("[disp] got ping, ponging...\n");
     return true;
 }
 
@@ -136,7 +136,7 @@ bool disp_method_pong(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
         return false;
     }
 
-    printf("[disp] got pong\n");
+    // printf("[disp] got pong\n");
     peer->last_seen = get_timestump();
     return true;
 }

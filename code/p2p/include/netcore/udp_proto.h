@@ -1,4 +1,5 @@
 #include "udp_sock.h"
+#include <netinet/in.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -29,23 +30,19 @@ typedef enum: uint8_t {
     P2P_PACK_HELLO,     // RUDP
     P2P_PACK_REJECT,    // RUDP
     P2P_PACK_ACCEPT,    // RUDP
-    P2P_PACK_STATE      // no RUDP
+    P2P_PACK_STATE,     // no RUDP
+    P2P_PACK_RACK       // RUDP ACK
 } udp_pack_type;
 
 bool udp_is_RUDP_req(udp_pack_type type){
     switch (type) {
-        case P2P_PACK_ACK:       return false;
-        case P2P_PACK_PING:      return false;
-        case P2P_PACK_PONG:      return false;
-        case P2P_PACK_PUNCH:     return false;
-        case P2P_PACK_GOSSIP:    return false;
-
         case P2P_PACK_DATA:      return true;
         case P2P_PACK_HELLO:     return true;
         case P2P_PACK_REJECT:    return true;
         case P2P_PACK_ACCEPT:    return true;
+        case P2P_PACK_RACK:      return true;
+        default:                 return false;
     }
-    return false;
 }
 
 #pragma pack(push, 1)
@@ -83,11 +80,26 @@ udp_packet *udp_make_pack(
     pack->h_to   = htonl(hash_to);
     pack->packtype = (uint8_t)(type);
     
-    memcpy(pack->data, payload, payload_size);
+    if (payload)
+        memcpy(pack->data, payload, payload_size);
 
     pack->chsum  = htonl(crc32(pack, total_size));
 
     return pack;
+}
+
+udp_packet *udp_copy_pack(udp_packet *pk, bool apply_ntoh){
+    udp_packet *out = malloc(sizeof(udp_packet) + (apply_ntoh ? ntohl(pk->d_size): pk->d_size));
+    out->chsum    = apply_ntoh ? ntohl(pk->chsum): pk->chsum;
+    out->magic    = apply_ntoh ? ntohl(pk->magic): pk->magic;
+    out->seq      = apply_ntoh ? ntohl(pk->seq): pk->seq;
+    out->d_size   = apply_ntoh ? ntohl(pk->d_size): pk->d_size;
+    out->h_from   = apply_ntoh ? ntohl(pk->h_from): pk->h_from;
+    out->h_to     = apply_ntoh ? ntohl(pk->h_to): pk->h_to;
+    out->packtype = pk->packtype;
+    if (out->d_size != 0) memcpy(out->data, pk->data, out->d_size);
+
+    return out;
 }
 
 ssize_t udp_pack_send(

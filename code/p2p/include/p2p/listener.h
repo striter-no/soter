@@ -45,8 +45,8 @@ static void *p2p_listener_worker(void *_args){
             continue;
         }
 
-        naddr_t addr = naddr_nfd2str(remote);
-        printf("[listener] incoming packet from %s:%u\n", addr.ip.v4.ip, addr.ip.v4.port);
+        // naddr_t addr = naddr_nfd2str(remote);
+        // printf("[listener] incoming packet from %s:%u\n", addr.ip.v4.ip, addr.ip.v4.port);
         // printf("[listener] PUSH: %p\n", incoming);
         prot_queue_push(&list->packets, &incoming);
         write(list->pack_eventfd, &v, sizeof(v));
@@ -59,6 +59,14 @@ void p2p_listener_end(p2p_listener *listener){
     atomic_store(&listener->is_running, false);
     pthread_join(listener->main_thread, NULL);
     
+    udp_packet *pkt;
+    while (0 == prot_queue_pop(&listener->packets, &pkt)){
+        if (pkt) {
+            printf("[listener_end] freeing unhandled packet %p\n", pkt);
+            free(pkt);
+        }
+    }
+
     prot_queue_end(&listener->packets);
 }
 

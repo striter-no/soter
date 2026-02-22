@@ -194,6 +194,16 @@ int netfd_wait(nnet_fd fd, int events, int timeout){
     return poll(fds, 1, timeout);
 }
 
+int evfd_wait(int evfd, int events, int timeout){
+    struct pollfd fd[1] = {{.fd = evfd, .events = events}};
+    int r = poll(fd, 1, timeout);
+    if (r <= 0) return r;
+
+    uint64_t u;
+    read(evfd, &u, sizeof(u));
+    return r;
+}
+
 naddr_t naddr_from_uint32(uint32_t ip_bin, uint16_t port) {
     naddr_t addr;
     memset(&addr, 0, sizeof(addr));

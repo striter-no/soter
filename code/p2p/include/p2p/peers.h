@@ -6,6 +6,7 @@
 #include <base/prot_array.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/eventfd.h>
 
 #ifndef P2P_PEER_DEAD_DT
 #define P2P_PEER_DEAD_DT 5
@@ -31,6 +32,7 @@ typedef struct {
     uint32_t   last_seq;
     uint32_t   last_seen;
     p2p_status status;
+    int        status_evfd;
 } p2p_peer;
 
 typedef struct {
@@ -43,6 +45,13 @@ typedef struct {
 
 uint32_t get_timestump(){
     return time(NULL);
+}
+
+void p2p_peer_changestat(
+    p2p_peer *peer, p2p_status new_status
+){
+    peer->status = new_status;
+    write(peer->status_evfd, &(uint64_t){1}, 8);
 }
 
 int p2p_psystem_init(
@@ -79,31 +88,34 @@ int p2p_psystem_punchnat(
     p2p_peers_system *sys,
     uint32_t          peer_uid,
     naddr_t           peer_addr,
-    p2p_peer         *peer,
+    int              *evfd,
     int               packs_n
 ){
-    peer->fd = (nnet_fd){0};
+    p2p_peer peer;
+    peer.fd = (nnet_fd){0};
     for (int i = 0; i < packs_n; i++){
-        p2pnp_udp_punch(sys->p_client, peer_addr, sys->p_client->UID, &peer->fd);
+        p2pnp_udp_punch(sys->p_client, peer_addr, sys->p_client->UID, &peer.fd);
         sleep(1);
     }
 
-    peer->peer_id   = peer_uid;
-    peer->last_seen = 0;
-    peer->status    = P2P_STAT_PUNCHING;
-    peer->last_seq  = 0;
+    peer.peer_id   = peer_uid;
+    peer.last_seen = 0;
+    peer.status    = P2P_STAT_PUNCHING;
+    peer.last_seq  = 0;
+    peer.status_evfd = evfd == NULL? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): *evfd;
 
     // add to pending
-    prot_array_push(&sys->pushing_peers, peer);
+    prot_array_push(&sys->pushing_peers, &peer);
 
-    return 0;
+    return peer.status_evfd;
 }
 
 int p2p_peer_register(
     p2p_peers_system *sys,
     naddr_t           peer_addr,
     uint32_t          peer_uid,
-    p2p_status        status
+    p2p_status        status,
+    int               efd
 ){
     if (!sys) return -1;
 
@@ -113,12 +125,15 @@ int p2p_peer_register(
     peer.status    = status;
     peer.last_seq  = 0;
     peer.fd        = netfdq(peer_addr);
+    peer.status_evfd = efd == -1? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): efd;
 
     // add to pending
-    if (status == P2P_STAT_PUNCHING)
-        return prot_array_push(&sys->pushing_peers, &peer);
-    else 
-        return prot_table_set(&sys->peers, &peer_uid, &peer);
+    if (status == P2P_STAT_PUNCHING){
+        prot_array_push(&sys->pushing_peers, &peer);
+    } else { 
+        prot_table_set(&sys->peers, &peer_uid, &peer);
+    }
+    return peer.status_evfd;
 }
 
 p2p_peer *p2p_psystem_Ppeer(
@@ -177,11 +192,15 @@ int p2p_psystem_makealive(
             p2p_peer copy;
             prot_array_remove(&sys->pushing_peers, i);
             
+            copy.status_evfd = el->status_evfd;
             copy.last_seen = get_timestump();
-            copy.status    = P2P_STAT_ACTIVE;
+            // copy.status    = P2P_STAT_ACTIVE;
             copy.peer_id   = el->peer_id;
             copy.fd        = el->fd;
             copy.last_seq  = 0;
+            
+            p2p_peer_changestat(&copy, P2P_STAT_ACTIVE);
+            printf("[disp][p2p] changed stat for %u to ACTIVE\n", copy.status_evfd);
             prot_table_set(&sys->peers, &peer_id, &copy);
 
             prot_array_unlock(&sys->pushing_peers);

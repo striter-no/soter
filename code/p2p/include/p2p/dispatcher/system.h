@@ -89,7 +89,8 @@ void *p2p_dispatcher_worker(void *_args){
         NULL, // disp_method_hello    // 6
         NULL, // disp_method_reject   // 7
         NULL, // disp_method_accept   // 8
-        NULL  // (STATE)              // 9
+        NULL, // (STATE)              // 9
+        NULL, // RUDP RACK            // 10
     };
     
     p2p_dispatcher *disp = _args;
@@ -142,7 +143,6 @@ void *p2p_dispatcher_worker(void *_args){
 }
 
 void p2p_dispatcher_end(p2p_dispatcher *dispatcher){
-    p2p_rudpdisp_end(dispatcher->rudp_disp);
     atomic_store(&dispatcher->is_active, false);
     pthread_join(dispatcher->main_thread, NULL);
 }
@@ -156,8 +156,6 @@ int p2p_dispatcher_start(p2p_dispatcher *dispatcher){
         &p2p_dispatcher_worker,
         dispatcher
     );
-
-    p2p_rudpdisp_run(dispatcher->rudp_disp);
 
     return r;
 }
