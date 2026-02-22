@@ -43,7 +43,7 @@ static void p2p_dispatcher_liveness_check(p2p_dispatcher *disp){
         }
 
         if (peer->status == P2P_STAT_TIMEOUT){
-            printf("[disp][liveness] removing timeouted peer %u\n", peer->peer_id);
+            SLOG_DEBUG("[disp][liveness] removing timeouted peer %u", peer->peer_id);
             prot_table_remove(&psys->peers, &peer->peer_id);
         } else i++;
     }
@@ -58,7 +58,6 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
     if (get_timestump() - disp->last_gossiping < GOSSIP_DT)
         return;
 
-    // printf("[gossip] starting gossiping\n");
     prot_table_lock(&psys->peers);
     for (size_t i = 0; i < psys->peers.table.array.len; i++){
         dyn_pair *p = dyn_array_at(&psys->peers.table.array, i);
@@ -72,7 +71,6 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
         udp_pack_send(cli, gs_pck, peer->fd);
     }
     prot_table_unlock(&psys->peers);
-    // printf("[gossip] end\n");
 
     disp->last_gossiping = get_timestump();
 }
@@ -114,17 +112,14 @@ void *p2p_dispatcher_worker(void *_args){
 
         udp_packet *pkt = NULL;
         if (prot_queue_pop(&list->packets, (void**)&pkt) != 0){
-            perror("[disp] failed to get packet, something went wrong");
+            SLOG_ERROR("[disp] failed to get packet, something went wrong");
             continue;
         }
 
-        // printf("[disp] POP: %p\n", pkt);
         
         if (!pkt) continue;
-        // printf("[disp] packtype: %u\n", (uint8_t)pkt->packtype);
         
         if (udp_is_RUDP_req(pkt->packtype)){
-            printf("[disp] passing packet to RUDP dispatcher\n");
             p2p_rudpdisp_pass(disp->rudp_disp, pkt);
             continue;
         }
@@ -133,7 +128,7 @@ void *p2p_dispatcher_worker(void *_args){
         if (method){
             (DISPATCHER_METHOD method)(pkt, disp, cli);
         } else {
-            printf("[disp] no method for this type of packet (%u)\n", pkt->packtype);
+            SLOG_WARNING("[disp] no method for this type of packet (%u)", pkt->packtype);
         }
         
         free(pkt);

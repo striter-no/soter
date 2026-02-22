@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "dyn_array.h"
+#include <logging/logger.h>
 
 #ifndef BASE_PROT_ARRAY
 
@@ -25,7 +26,7 @@ prot_array prot_array_create(size_t element_size){
 
 void prot_array_lock(prot_array *array){
     if (!array){
-        fprintf(stderr, "prot lock on NULL array\n");
+        SLOG_FATAL("prot lock on NULL array");
         abort();
     }
     pthread_mutex_lock(&array->mtx);
@@ -33,7 +34,7 @@ void prot_array_lock(prot_array *array){
 
 void prot_array_unlock(prot_array *array){
     if (!array) {
-        fprintf(stderr, "prot unlock on NULL array\n");
+        SLOG_FATAL("prot unlock on NULL array");
         abort();
     }
     pthread_mutex_unlock(&array->mtx);

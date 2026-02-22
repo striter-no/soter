@@ -41,13 +41,13 @@ static void *p2p_listener_worker(void *_args){
         nnet_fd remote = {0};
         udp_packet *incoming = udp_pack_recv(list->p_client, &remote);
         if (!incoming) {
-            printf("[listener] aborted packet\n");
+            SLOG_WARNING("[listener] aborted packet");
             continue;
         }
 
-        // naddr_t addr = naddr_nfd2str(remote);
-        // printf("[listener] incoming packet from %s:%u\n", addr.ip.v4.ip, addr.ip.v4.port);
-        // printf("[listener] PUSH: %p\n", incoming);
+        naddr_t addr = naddr_nfd2str(remote);
+        // SLOG_DEBUG("[listener] incoming packet from %s:%u", addr.ip.v4.ip, addr.ip.v4.port);
+        // SLOG_DEBUG("[listener] PUSH: %p", incoming);
         prot_queue_push(&list->packets, &incoming);
         write(list->pack_eventfd, &v, sizeof(v));
     }
@@ -62,7 +62,7 @@ void p2p_listener_end(p2p_listener *listener){
     udp_packet *pkt;
     while (0 == prot_queue_pop(&listener->packets, &pkt)){
         if (pkt) {
-            printf("[listener_end] freeing unhandled packet %p\n", pkt);
+            SLOG_DEBUG("[listener_end] freeing unhandled packet %p", pkt);
             free(pkt);
         }
     }

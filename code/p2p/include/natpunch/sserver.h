@@ -45,27 +45,25 @@ int p2p_udp_stateserv(
     p2p_udp *client = list->p_client;
     nnet_fd sfd = netfdq(state_addr);
     while (true){
-        // printf("[p2pnp][sserv] sending packet...\n");
         udp_packet *pack = udp_make_pack(0, client->UID, 0, P2P_PACK_STATE, &client->UID, sizeof(client->UID));
         udp_pack_send(client, pack, sfd);
 
         if (0 >= evfd_wait(list->pack_eventfd, POLLIN, 100)) continue;
-        // printf("[p2pnp][sserv] got incoming packet...\n");
         udp_packet *pkt = NULL;
         if (prot_queue_pop(&list->packets, (void**)&pkt) != 0){
-            perror("[p2pnp][sserv] failed to get packet, something went wrong\n");
+            SLOG_ERROR("[p2pnp][sserv] failed to get packet, something went wrong");
             continue;
         }
 
         if (pkt->packtype != P2P_PACK_STATE) {
-            printf("[p2pnp][sserv] ignoring packtype %u\n", pkt->packtype);
+            SLOG_WARNING("[p2pnp][sserv] ignoring packtype %u", pkt->packtype);
             goto end;
         }
 
         p2p_state_peer state;
 
         if (pkt->d_size != sizeof(state)){
-            if (pkt->d_size != 1) printf("[p2pnp][sserv] ignoring corrupted packet\n");
+            if (pkt->d_size != 1) SLOG_WARNING("[p2pnp][sserv] ignoring corrupted packet");
             // otherwise it is "0", answer when no peers available
         } else {
             memcpy(&state, pkt->data, sizeof(state));

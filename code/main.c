@@ -1,3 +1,4 @@
+#include <logging/logger.h>
 #include <p2p/dispatcher.h>
 #include <p2p/peers.h>
 #include <natpunch/sserver.h>
@@ -34,6 +35,7 @@ static void after_connection(
 );
 
 int main(void){
+    SOTER_LOGER = logger_init(STDOUT_FILENO);
     srand(time(NULL));
     
     p2p_udp client; 
@@ -54,8 +56,8 @@ int main(void){
     if (0 > p2p_psystem_gnattype(&psyst, servers[0], servers[1], rnd_port()))
         return -1;
     
-    printf("[main] my NAT type: %s\n", strnattype(psyst.nat_type));
-    printf("[main] my conn: %s:%u:%u\n", client.addr.ip.v4.ip, client.addr.ip.v4.port, client.UID);
+    SLOG_INFO("[main] my NAT type: %s", strnattype(psyst.nat_type));
+    SLOG_INFO("[main] my conn: %s:%u:%u", client.addr.ip.v4.ip, client.addr.ip.v4.port, client.UID);
 
     p2p_listener listener;
     p2p_listener_init(&listener, &client);
@@ -64,7 +66,7 @@ int main(void){
     int statfd;
     p2p_udp_stateserv(&listener, servers[2], &other_ip, &other_uid);
     statfd = p2p_peer_register(&psyst, other_ip, other_uid, P2P_STAT_PUNCHING, -1);
-    printf("[main] state got: %s:%u:%u\n", other_ip.ip.v4.ip, other_ip.ip.v4.port, other_uid);
+    SLOG_INFO("[main] state got: %s:%u:%u", other_ip.ip.v4.ip, other_ip.ip.v4.port, other_uid);
 
     p2p_rudp_system rudp;
     p2p_rudp_systeminit(&rudp, &client, &psyst);
@@ -74,18 +76,18 @@ int main(void){
     p2p_dispatcher_init(&dispatcher, &listener, &psyst, &gossipsyst, &rudp.disp);
     p2p_dispatcher_start(&dispatcher);
     
-    printf("[main] sending punch packet\n");
+    SLOG_INFO("[main] sending punch packet");
     p2p_psystem_punchnat(&psyst, other_uid, other_ip, &statfd, 1);
-    printf("[main] waiting fd %u\n", statfd);
+    SLOG_INFO("[main] waiting fd %u", statfd);
     
     evfd_wait(statfd, POLLIN, -1);
 
     p2p_peer *act_peer = p2p_psystem_peer(&psyst, other_uid);
     if (!act_peer) {
-        printf("[main] failed to get peer\n");
+        SLOG_ERROR("[main] failed to get peer");
         return -1;
     }
-    printf("[main] got connected active peer: %u\n", act_peer->peer_id);
+    SLOG_INFO("[main] got connected active peer: %u", act_peer->peer_id);
 
     // --- after connection
 
@@ -100,6 +102,7 @@ int main(void){
     p2p_listener_end(&listener);
 
     udp_close(client);
+    logger_stop(&SOTER_LOGER);
 }
 
 static void after_connection(
@@ -110,37 +113,37 @@ static void after_connection(
     udp_packet *pack = udp_make_pack(
         0, client->UID, peer->peer_id, P2P_PACK_DATA, "Hello", 5
     );
-    printf("[com] sending RUDP pack for %u\n", peer->peer_id);
+    SLOG_INFO("[com] sending RUDP pack for %u", peer->peer_id);
     if (0 > p2p_rudp_newpack(rudp, pack, peer->peer_id)){
-        printf("[com] failed to send pack\n");
+        SLOG_ERROR("[com] failed to send pack");
         free(pack);
         return;
     }
 
-    printf("[com] waiting channel for %u\n", peer->peer_id);
+    SLOG_INFO("[com] waiting channel for %u", peer->peer_id);
     p2p_rudpdisp_waitchan(&rudp->disp, peer->peer_id);
-    printf("[com] got channel\n");
+    SLOG_INFO("[com] got channel");
 
     p2p_rudp_channel *chan;
     if (0 > p2p_rudpdisp_getchan(&rudp->disp, &chan, peer->peer_id)){
-        printf("Failed to get channel\n");
+        SLOG_ERROR("Failed to get channel");
         return;
     }
 
-    printf("[com] awaiting packet\n");
+    SLOG_INFO("[com] awaiting packet");
     udp_packet *out = NULL;
     if (0 > p2p_rudp_chan_awaitpack(chan, &out, -1)){
-        printf("Failed to wait a packet\n");
+        SLOG_ERROR("Failed to wait a packet");
         return;
     }
-    printf("[com] awaited\n");
+    SLOG_INFO("[com] awaited");
 
     if (!out) {
-        printf("Failed to get packet\n");
+        SLOG_ERROR("Failed to get packet");
         return;
     }
-    printf("size: %u\n", out->d_size);
-    printf("From peer: %u %.*s\n", out->d_size, out->d_size, out->data);
+    SLOG_INFO("size: %u", out->d_size);
+    SLOG_INFO("From peer: %u %.*s", out->d_size, out->d_size, out->data);
     free(out);
     sleep(10);
 }

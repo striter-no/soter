@@ -200,7 +200,7 @@ int p2p_psystem_makealive(
             copy.last_seq  = 0;
             
             p2p_peer_changestat(&copy, P2P_STAT_ACTIVE);
-            printf("[disp][p2p] changed stat for %u to ACTIVE\n", copy.status_evfd);
+            SLOG_DEBUG("[disp][p2p] changed stat for %u to ACTIVE", copy.status_evfd);
             prot_table_set(&sys->peers, &peer_id, &copy);
 
             prot_array_unlock(&sys->pushing_peers);
@@ -219,25 +219,22 @@ int p2p_psystem_activity(
 ){
     p2p_peer *peer = p2p_psystem_peer(sys, peer_id);
     if (peer == NULL) {
-        printf("[activity] failed, peer %u is NULL\n", peer_id);
+        SLOG_WARNING("[activity] failed, peer %u is NULL", peer_id);
         return -1;
     }
 
     bool alive = peer->status == P2P_STAT_ACTIVE;
     uint32_t dt = get_timestump() - peer->last_seen;
     
-    printf("... ls/dt: %u/%u\n", peer->last_seen, dt);
     if (dt >= P2P_PEER_DEAD_DT){
         if (is_changed) *is_changed = alive ? true: false;
         if (alive) {
-            printf("... changing status to timeout\n");
             peer->status = P2P_STAT_TIMEOUT;
         }
 
         return 0;
     }
 
-    // peer->last_seen = get_timestump();
     if (is_changed) *is_changed = false;
     return 0;
 }

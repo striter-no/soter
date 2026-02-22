@@ -31,8 +31,6 @@ void gossip_system_end(gossip_system *sys){
 
 int gossip_new_entry(gossip_system *sys, gossip_entry entry){
     if (prot_array_count(&sys->gossips, &entry) != 0 || entry.uid == sys->selfuid) {
-        // if (entry.uid == sys->selfuid)
-        //     printf("[gossip] ignoring selfuid\n");
         return -1;
     }
     return prot_array_push(&sys->gossips, &entry);
@@ -57,7 +55,7 @@ int gossip_system_update(
     if (!sys) return -1;
     
     if (gossip_dsize % sizeof(gossip_entry) != 0) {
-        fprintf(stderr, "[gossip] failed to update local DB, incoming data has invalid size (%zu)\n", gossip_dsize);
+        SLOG_ERROR("[gossip] failed to update local DB, incoming data has invalid size (%zu)", gossip_dsize);
         return -1;
     }
 
@@ -67,8 +65,7 @@ int gossip_system_update(
     local_array.len = gossip_dsize / sizeof(gossip_entry);
     local_array.elements = gossip_data;
 
-    // printf("[gossip] got array with %zu size (%zu bytes)\n", local_array.len, gossip_dsize);
-
+    
     prot_array_lock(&sys->gossips);
     size_t old_l = sys->gossips.array.len;
     for (size_t i = 0; i < local_array.len; i++){
@@ -77,7 +74,7 @@ int gossip_system_update(
         );
     }
     if (old_l != sys->gossips.array.len){
-        printf("[gossip] acquired %zu new gossip entries\n", sys->gossips.array.len - old_l);
+        SLOG_INFO("[gossip] acquired %zu new gossip entries", sys->gossips.array.len - old_l);
     }
     prot_array_unlock(&sys->gossips);
     return 0;

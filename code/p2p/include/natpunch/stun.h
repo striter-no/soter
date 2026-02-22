@@ -47,7 +47,7 @@ int p2pnp_udp_stun(
     struct stun_header *res = (struct stun_header *)buf;
     
     if (ntohs(res->type) != STUN_BINDING_RESPONSE || ntohl(res->magic) != STUN_MAGIC_COOKIE) {
-        perror("invalid STUN response\n");
+        SLOG_ERROR("invalid STUN response");
         return -1;
     }
 

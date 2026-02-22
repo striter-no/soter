@@ -89,7 +89,6 @@ udp_packet *udp_make_pack(
 }
 
 udp_packet *udp_copy_pack(udp_packet *pk, bool apply_ntoh){
-    // printf("copying %u size\n", pk->d_size);
     udp_packet *out = malloc(sizeof(udp_packet) + (apply_ntoh ? ntohl(pk->d_size): pk->d_size));
     out->chsum    = apply_ntoh ? ntohl(pk->chsum): pk->chsum;
     out->magic    = apply_ntoh ? ntohl(pk->magic): pk->magic;
@@ -151,7 +150,7 @@ udp_packet *udp_pack_recv(
     uint32_t calculated_chsum = crc32(buffer, recved);
     
     if (received_chsum != calculated_chsum) {
-        fprintf(stderr, "[udpproto][recv error] checksum mismatch\n");
+        SLOG_ERROR("[udpproto][recv error] checksum mismatch");
         return NULL;
     }
 
