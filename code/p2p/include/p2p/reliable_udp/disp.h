@@ -7,6 +7,10 @@
 #define RUDP_TIMEOUT 5
 #endif
 
+#ifndef REORDER_WINDOW
+#define REORDER_WINDOW 5
+#endif
+
 #ifndef RUDP_RETRANSMISSION_CAP
 #define RUDP_RETRANSMISSION_CAP 10
 #endif
@@ -42,11 +46,11 @@ int p2p_rudp_chan_awaitpack(
 ){
     if (!chan) return -1;
 
-    if (0 >= evfd_wait(chan->netpack_fd, POLLIN, timeout))
+    if (0 >= evfd_wait(chan->reordered_fd, POLLIN, timeout))
         return -1;
 
     udp_packet *pack;
-    if (0 > prot_queue_pop(&chan->network_queue, &pack))
+    if (0 > prot_queue_pop(&chan->reoredered_queue, &pack))
         return -1;
 
     *out = udp_copy_pack(pack, false);
@@ -126,7 +130,7 @@ static void p2p_rudp_check_chtimeouts(
             uint32_t peer_id = pkt->copy_pack->h_to;
             p2p_peer *p = p2p_psystem_peer(psys, peer_id);
             if (!p) {
-                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                printf("[rudpdisp] PSYS does not know about peer: %u\n", peer_id);
                 free(pkt->copy_pack);
                 dyn_array_remove(&chan->pending_queue.array, i);
                 continue;
@@ -143,15 +147,17 @@ static void p2p_rudp_check_chtimeouts(
             uint32_t peer_id = pkt->copy_pack->h_to;
             p2p_peer *p = p2p_psystem_peer(psys, peer_id);
             if (!p) {
-                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                printf("[rudpdisp] PSYS does not know about peer: %u\n", peer_id);
                 free(pkt->copy_pack);
                 dyn_array_remove(&chan->pending_queue.array, i);
                 continue;
             }
 
+            printf("[chtime] sending packet... (%u seq)\n", chan->next_seq);
             pkt->seq = chan->next_seq;
             udp_pack_send(cli, retranslate_udp(pkt->copy_pack, 1), p->fd);
             chan->next_seq++;
+            pkt->retransmit_count++;
             i++;
         }
     }
@@ -188,16 +194,16 @@ static void *p2p_rudpdisp_senderworker(void *_args){
 
         if (!pkt) continue;
 
-        printf("[rudisp] new outgoing packet\n");
-        printf("[rudisp] outgoing for %u\n", ntohl(pkt->h_to));
+        printf("[rudpdisp] new outgoing packet\n");
+        printf("[rudpdisp] outgoing for %u\n", ntohl(pkt->h_to));
         uint32_t peer_id = ntohl(pkt->h_to);
         p2p_rudp_channel *chan = NULL;
         if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
-            printf("[rudisp] made new chan %u\n", peer_id);
+            printf("[rudpdisp] made new chan %u\n", peer_id);
 
             p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
             if (!p) {
-                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                printf("[rudpdisp] PSYS does not know about peer: %u\n", peer_id);
                 printf("[thread] FREEING packet: %p\n", pkt); free(pkt);
                 continue;
             }
@@ -207,19 +213,97 @@ static void *p2p_rudpdisp_senderworker(void *_args){
 
         p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
         if (!p) {
-            printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+            printf("[rudpdisp] PSYS does not know about peer: %u\n", peer_id);
             printf("[thread] FREEING packet: %p\n", pkt); free(pkt);
             continue;
         }
 
         // теперь пакет в pending_queue, sended_fd тригернут
-        printf("[rudisp] just SENT packet with SEQ %u\n", chan->next_seq);
+        printf("[rudpdisp] just SENT packet with SEQ %u\n", chan->next_seq);
         p2p_rudp_chan_newpack(chan, pkt, peer_id);
         free(pkt);
     }
     printf("[thread] p2p_rudpdisp_senderworker end\n");
 
     return NULL;
+}
+
+static void p2p_rudpdisp_chreordering(
+    p2p_rudp_dispatcher *disp,
+    p2p_rudp_channel    *chan,
+    p2p_peers_system    *psys
+){
+    prot_queue_lock(&chan->network_queue);
+    udp_packet *pack;
+
+    while (0 == prot_queue_pop(&chan->network_queue, &pack)){
+        if (!pack) continue;
+
+        uint32_t expected = (chan->last_recved_seq == UINT32_MAX) ? 0 : chan->last_recved_seq + 1;
+        uint32_t diff = pack->seq - expected;
+
+        if (diff > REORDER_WINDOW && diff < (0xFFFFFFFF - REORDER_WINDOW)) {
+            free(pack);
+            continue;
+        }
+
+        prot_array_lock(&chan->reorder_buffer);
+        
+        size_t pos = 0;
+        bool duplicate = false;
+        size_t len = chan->reorder_buffer.array.len;
+
+        for (pos = 0; pos < len; pos++) {
+            udp_packet **existing = dyn_array_at(&chan->reorder_buffer.array, pos);
+            if ((*existing)->seq == pack->seq) {
+                duplicate = true; 
+                break;
+            }
+            if ((*existing)->seq > pack->seq) {
+                break;
+            }
+        }
+
+        if (!duplicate) {
+            dyn_array_insert(&chan->reorder_buffer.array, pos, &pack);
+        } else {
+            free(pack);
+        }
+        
+        prot_array_unlock(&chan->reorder_buffer);
+    }
+    prot_queue_unlock(&chan->network_queue);
+
+    prot_array_lock(&chan->reorder_buffer);
+    
+    while (chan->reorder_buffer.array.len > 0) {
+        udp_packet **p_ptr = dyn_array_at(&chan->reorder_buffer.array, 0);
+        udp_packet *p = *p_ptr;
+
+        uint32_t next_needed = (chan->last_recved_seq == UINT32_MAX) ? 0 : chan->last_recved_seq + 1;
+
+        if (p->seq == next_needed) {
+            prot_queue_push(&chan->reoredered_queue, &p);
+            chan->last_recved_seq = p->seq;
+
+            dyn_array_remove(&chan->reorder_buffer.array, 0);
+            
+            write(chan->reordered_fd, &(uint64_t){1}, 8);
+        } else {
+            break; 
+        }
+    }
+    
+    prot_array_unlock(&chan->reorder_buffer);
+}
+
+static void p2p_rudpdisp_reordering(p2p_rudp_dispatcher *disp){
+    prot_table_lock(&disp->channels);
+    for (size_t i = 0; i < disp->channels.table.array.len; i++){
+        dyn_pair *p = dyn_array_at(&disp->channels.table.array, i);
+        p2p_rudpdisp_chreordering(disp, p->second, disp->psys);
+    }
+    prot_table_unlock(&disp->channels);
 }
 
 // serves incoming messages
@@ -229,9 +313,12 @@ static void *p2p_rudpdisp_worker(void *_args){
     printf("[thread] p2p_rudpdisp_worker start\n");
     while (atomic_load(&disp->is_active)){
         int ret = evfd_wait(disp->newpack_fd, POLLIN, 100);
+
+        p2p_rudpdisp_reordering(disp);
+
         if (ret == 0) continue;
         else if (ret < 0) {
-            perror("rudisp: poll()");
+            perror("rudpdisp: poll()");
             continue;
         }
 
@@ -243,15 +330,15 @@ static void *p2p_rudpdisp_worker(void *_args){
 
         if (!pkt) continue;
 
-        printf("[rudisp] new incoming packet\n");
+        printf("[rudpdisp] new incoming packet\n");
         
         uint32_t peer_id = pkt->h_from;
         p2p_rudp_channel *chan = NULL;
         if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
-            printf("[rudisp] made new chan %u\n", peer_id);
+            printf("[rudpdisp] made new chan %u\n", peer_id);
             p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
             if (!p) {
-                printf("[rudisp] PSYS does not know about peer: %u\n", peer_id);
+                printf("[rudpdisp] PSYS does not know about peer: %u\n", peer_id);
                 goto end;
             }
             p2p_rudpdisp_newchan(disp, peer_id, p->fd, &chan);
@@ -259,7 +346,7 @@ static void *p2p_rudpdisp_worker(void *_args){
 
         if (pkt->packtype == P2P_PACK_DATA){
             uint32_t seq = pkt->seq;
-            printf("[rudisp] just READ packet with SEQ %u\n", seq);
+            printf("[rudpdisp] just READ packet with SEQ %u\n", seq);
             
             prot_queue_push(&chan->network_queue, &pkt);
             write(chan->netpack_fd, &(uint64_t){1}, 8);
@@ -275,8 +362,9 @@ static void *p2p_rudpdisp_worker(void *_args){
             bool was_ack = false;
             for (size_t i = 0; i < chan->pending_queue.array.len;){
                 p2p_rudp_pending_pkt *ppkt = prot_array_at(&chan->pending_queue, i);
+                printf("[rudpdisp] ack:%u\n", ppkt->seq);
                 if (ppkt->seq == pkt->seq){
-                    printf("[rudisp][ack] acked in channel %u, seq %u\n", peer_id, ppkt->seq);
+                    printf("[rudpdisp][ack] acked in channel %u, seq %u\n", peer_id, ppkt->seq);
                     chan->last_ack_received = pkt->seq;
 
                     free(ppkt->copy_pack);
@@ -289,7 +377,7 @@ static void *p2p_rudpdisp_worker(void *_args){
             }
 
             if (!was_ack){
-                printf("[rudisp][warn] ACK was recved, but no suitable SEQ was found: %u\n", pkt->seq);
+                printf("[rudpdisp][warn] ACK was recved, but no suitable SEQ was found: %u\n", pkt->seq);
             }
 
             prot_array_unlock(&chan->pending_queue);
@@ -364,6 +452,7 @@ void p2p_rudpdisp_end(
 
         prot_array_end(&chan->pending_queue);
         prot_queue_end(&chan->network_queue);
+        prot_array_end(&chan->reorder_buffer);
         prot_queue_end(&chan->reoredered_queue);
     }
 

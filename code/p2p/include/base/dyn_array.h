@@ -12,6 +12,7 @@ typedef struct {
 } dyn_array;
 
 dyn_array dyn_array_create(size_t element_size){
+    
     return (dyn_array){
         .elements = NULL,
         .element_size = element_size,
@@ -95,6 +96,45 @@ void dyn_array_setself(dyn_array *array){
 
         i++;
     }
+}
+
+int dyn_array_insert(dyn_array *array, size_t index, const void *element) {
+    if (!array || !element || index > array->len) return -1;
+
+    if (array->len >= (array->head - 1)) {
+        size_t new_capacity = (array->head == 0) ? 2 : array->head * 2;
+        void *n = realloc(array->elements, new_capacity * array->element_size);
+        if (!n) return -1;
+        
+        array->elements = n;
+        array->head = new_capacity;
+    }
+
+    if (index < array->len) {
+        memmove(
+            ((char*)array->elements) + (index + 1) * array->element_size,
+            ((char*)array->elements) + index * array->element_size,
+            (array->len - index) * array->element_size
+        );
+    }
+
+    memcpy(
+        ((char*)array->elements) + index * array->element_size,
+        element,
+        array->element_size
+    );
+
+    array->len++;
+    return 0;
+}
+
+typedef int (*dyn_array_cmp_t)(const void *a, const void *b);
+
+void dyn_array_sort(dyn_array *array, dyn_array_cmp_t cmp){
+    if (!array || !cmp || array->len <= 1) return;
+    
+    qsort(array->elements, array->len, array->element_size, 
+          (int (*)(const void*, const void*))cmp);
 }
 
 void dyn_array_end(dyn_array *array){

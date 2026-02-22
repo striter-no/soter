@@ -23,6 +23,8 @@ typedef struct {
 
 typedef struct {
     uint32_t next_seq;
+    uint32_t last_recved_seq;
+
     uint32_t last_ack_received;
     uint32_t last_ack_sent;
     prot_array pending_queue; // from user
@@ -105,6 +107,7 @@ void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, nnet_fd nfd){
     out->sended_fd        = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     out->UID = UID;
     out->nfd = nfd;
+    out->last_recved_seq  = UINT32_MAX;
 }
 
 int p2p_rudpdisp_newchan(
