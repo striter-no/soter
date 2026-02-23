@@ -1,0 +1,38 @@
+#!/usr/bin/bash
+
+set -e
+
+mkdir -p bin
+mkdir -p ./code/p2p/lib
+
+INSTALL_PREFIX="../code/p2p"
+ABSOLUTE_IPREFIX=$(cd ${INSTALL_PREFIX}; pwd)
+
+INSTALL_LIB="${ABSOLUTE_IPREFIX}/lib"
+INSTALL_INCLUDE="${ABSOLUTE_IPREFIX}/include"
+
+wget -O libsodium.tar https://github.com/jedisct1/libsodium/releases/download/1.0.21-RELEASE/libsodium-1.0.21.tar.gz
+
+mkdir -p ./libsodium
+tar -xf ./libsodium.tar -C ./libsodium
+mv ./libsodium/**/* ./libsodium/
+cd ./libsodium
+
+CONFIGURE_ARGS="--prefix=${ABSOLUTE_IPREFIX} --libdir=${INSTALL_LIB} --includedir=${INSTALL_INCLUDE}"
+
+ARCH="$(uname -m)"
+if [[ "$ARCH" == "aarch64" || "$ARCH" == "arm64" ]]; then
+    env CFLAGS="$CFLAGS -march=armv8-a+crypto+aes" ./configure $CONFIGURE_ARGS
+else
+    ./configure $CONFIGURE_ARGS
+fi
+
+make && make check 
+make install
+
+cd ..
+rm -rf ./libsodium ./libsodium.tar
+
+mv ./include/* ./code/p2p/include/
+mv ./lib/* ./code/p2p/lib/
+rm -rf ./include ./lib
