@@ -47,11 +47,6 @@ int soter_client(
         return -1;
     }
 
-    if (0 > udp_create(&client->net_client, __rnd_uid())){
-        SLOG_ERROR("soter_client: failed to create network client");
-        return -1;
-    }
-
     client->kp = soter_keypair_make();
     SLOG_DEBUG("[interface] my pubkey: %02x%02x%02x%02x%02x%02x%02x%02x...",
            client->kp.public_key[0],
@@ -62,6 +57,11 @@ int soter_client(
            client->kp.public_key[5],
            client->kp.public_key[6],
            client->kp.public_key[7]);
+
+    if (0 > udp_create(&client->net_client, soter_pubkey_to_uid(client->kp.public_key))){
+        SLOG_ERROR("soter_client: failed to create network client");
+        return -1;
+    }
 
     if (0 > p2p_psystem_init(&client->psyst, &client->net_client, client->kp)){
         SLOG_ERROR("soter_client: failed to create peer system");

@@ -10,16 +10,15 @@ int main(void){
     };
 
     soter client;
-    soter_client(&client, servers[2], servers[0], servers[1], LOG_WARNING);
+    soter_client(&client, servers[2], servers[0], servers[1], LOG_DEBUG);
 
     printf("NAT type: %s\n", strnattype(client.psyst.nat_type));
     printf("Current UID: %u\n", client.net_client.UID);
     soter_wait_state(&client, -1);
     
-
     p2p_state state = *soter_get_state(&client, 0);
     soter_p2p_connect(&client, state.UID, state.ip, state.pubkey, &state.stfd, &state.sk);
-    printf("Got peer: %s:%u:%u\n", state.ip.ip.v4.ip, state.ip.ip.v4.port, state.UID);
+    printf("Got peer: ...:%u:%u\n", state.ip.ip.v4.port, state.UID);// state.ip.ip.v4.ip
     
     evfd_wait(state.stfd, POLLIN, -1);
 

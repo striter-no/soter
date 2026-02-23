@@ -1,5 +1,7 @@
+#include <sodium/crypto_hash_sha256.h>
 #include <sodium/crypto_kx.h>
 #include <stdio.h>
+#include <string.h>
 
 #ifndef SOTER_CRYPTO_KE
 #define SOTER_PUBKEY_BYTES crypto_kx_PUBLICKEYBYTES
@@ -19,6 +21,15 @@ soter_keypair soter_keypair_make(){
     crypto_kx_keypair(kp.public_key, kp.private_key);
     
     return kp;
+}
+
+uint32_t soter_pubkey_to_uid(const unsigned char *pubkey){
+    unsigned char hash[crypto_hash_sha256_BYTES];
+    crypto_hash_sha256(hash, pubkey, crypto_kx_PUBLICKEYBYTES);
+    
+    uint32_t uid;
+    memcpy(&uid, hash, sizeof(uid));
+    return uid;
 }
 
 int soter_keypair_store(const soter_keypair *kp, const char *path){

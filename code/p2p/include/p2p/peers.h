@@ -129,6 +129,46 @@ int p2p_peer_handshake(
     return 0;
 }
 
+p2p_peer *p2p_psystem_Ppeer(
+    p2p_peers_system *sys,
+    uint32_t          peer_id
+){
+    prot_array_lock(&sys->pushing_peers);
+    for (size_t i = 0; i < sys->pushing_peers.array.len; i++){
+        p2p_peer* el = prot_array_at(&sys->pushing_peers, i);
+        if (el->peer_id == peer_id){
+            prot_array_unlock(&sys->pushing_peers);
+            return el;
+        }
+    }
+    prot_array_unlock(&sys->pushing_peers);
+    return NULL;
+}
+
+bool p2p_psystem_Ppeer_check(
+    p2p_peers_system *sys,
+    uint32_t          peer_id,
+    p2p_status        status
+){
+    p2p_peer *peer = p2p_psystem_Ppeer(sys, peer_id);
+    if (!peer) return false;
+    return peer->status == status;
+}
+
+p2p_peer *p2p_psystem_peer(
+    p2p_peers_system *sys,
+    uint32_t          peer_id
+){
+    return prot_table_get(&sys->peers, &peer_id);
+}
+
+bool p2p_psystem_isalive(
+    p2p_peers_system *sys,
+    uint32_t          peer_id
+){
+    void *peer = prot_table_get(&sys->peers, &peer_id);
+    return peer != NULL;
+}
 
 // * send punch message
 int p2p_psystem_punchnat(
@@ -228,47 +268,6 @@ int p2p_peer_register(
         prot_table_set(&sys->peers, &peer_uid, &peer);
     }
     return peer.status_evfd;
-}
-
-p2p_peer *p2p_psystem_Ppeer(
-    p2p_peers_system *sys,
-    uint32_t          peer_id
-){
-    prot_array_lock(&sys->pushing_peers);
-    for (size_t i = 0; i < sys->pushing_peers.array.len; i++){
-        p2p_peer* el = prot_array_at(&sys->pushing_peers, i);
-        if (el->peer_id == peer_id){
-            prot_array_unlock(&sys->pushing_peers);
-            return el;
-        }
-    }
-    prot_array_unlock(&sys->pushing_peers);
-    return NULL;
-}
-
-bool p2p_psystem_Ppeer_check(
-    p2p_peers_system *sys,
-    uint32_t          peer_id,
-    p2p_status        status
-){
-    p2p_peer *peer = p2p_psystem_Ppeer(sys, peer_id);
-    if (!peer) return false;
-    return peer->status == status;
-}
-
-p2p_peer *p2p_psystem_peer(
-    p2p_peers_system *sys,
-    uint32_t          peer_id
-){
-    return prot_table_get(&sys->peers, &peer_id);
-}
-
-bool p2p_psystem_isalive(
-    p2p_peers_system *sys,
-    uint32_t          peer_id
-){
-    void *peer = prot_table_get(&sys->peers, &peer_id);
-    return peer != NULL;
 }
 
 int p2p_psystem_makealive(
