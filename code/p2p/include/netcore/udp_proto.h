@@ -5,11 +5,11 @@
 #include <stdbool.h>
 
 #ifndef P2P_UDP_PROTO
-#define P2P_UDP_MAGIC 0x45503250
+#define P2P_UDP_MAGIC 0x015432
 
 static uint32_t crc32(const void *data, size_t n_bytes) {
     uint32_t crc = 0xFFFFFFFF;
-    const uint8_t *byte_ptr = (const uint8_t *)data; // Работаем побайтово
+    const uint8_t *byte_ptr = (const uint8_t *)data;
 
     for (size_t i = 0; i < n_bytes; i++) {
         crc ^= byte_ptr[i];

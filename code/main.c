@@ -2,6 +2,7 @@
 
 
 int main(void){
+    
     naddr_t servers[] = {
         naddr_domain("stun.l.google.com", 19302),
         naddr_domain("stunserver2025.stunprotocol.org", 3478),
