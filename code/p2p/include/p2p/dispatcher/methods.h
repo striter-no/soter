@@ -1,4 +1,5 @@
 #include "structs.h"
+#include <natpunch/sserver.h>
 
 #ifndef P2P_DISPATCHER_METHODS
 
@@ -151,6 +152,53 @@ bool disp_method_gossip(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
     if (0 > gossip_system_update(disp->gossip, pkt->data, pkt->d_size)){
         SLOG_ERROR("[disp][gossip] failed to update system");
         return false;
+    }
+    return true;
+}
+
+bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
+    // no sanity checks
+    if (pkt->packtype != P2P_PACK_STATE) {
+        SLOG_WARNING("[p2pnp][sserv] ignoring packtype %u", pkt->packtype);
+        return false;
+    }
+
+    p2p_state_peer state;
+
+    if (pkt->d_size != sizeof(state)){
+        if (pkt->d_size != 1) SLOG_WARNING("[p2pnp][sserv] ignoring corrupted packet");
+        // otherwise it is "0", answer when no peers available
+        return false;
+    } else {
+        memcpy(&state, pkt->data, sizeof(state));
+        naddr_t other_addr;
+        uint32_t other_uid;
+
+        p2p_state_peer2info(state, &other_addr, &other_uid);
+        gossip_entry entry = (gossip_entry){
+            .ip = naddr_to_uint32(other_addr),
+            .uid = other_uid,
+            .port = other_addr.ip.v4.port
+        };
+
+        if (gossip_entry_check(disp->gossip, entry)){
+            return false;
+        }
+
+        int stfd = p2p_peer_register(disp->psys, other_addr, other_uid, P2P_STAT_PUNCHING, -1);
+        SLOG_DEBUG("[p2pnp][sserv] stfd: %i (%s:%u %u)", stfd, other_addr.ip.v4.ip, other_addr.ip.v4.port, other_uid);
+        
+        gossip_new_entry(disp->gossip, entry);
+        SLOG_DEBUG("[p2pnp][gossip] new entry (%zu in total): %u %u %u", disp->gossip->gossips.array.len, entry.ip, entry.port, entry.uid);
+        
+        p2p_state gstate = {
+            .stfd = stfd,
+            .ip = other_addr,
+            .UID = other_uid
+        };
+        
+        prot_array_push(&disp->state_evfds, &gstate);
+        write(disp->sstate_evfd, &(uint64_t){1}, 8);
     }
     return true;
 }

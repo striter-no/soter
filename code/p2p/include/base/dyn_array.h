@@ -72,7 +72,10 @@ int dyn_array_count(dyn_array *array, const void *element){
 
     int count = 0;
     for (size_t i = 0; i < array->len; i++){
-        if (memcmp(element, ((char*)array->elements) + i * array->element_size, array->element_size) != 0) 
+        if (memcmp(element, 
+            ((char*)array->elements) + i * array->element_size, 
+            array->element_size
+        ) == 0)
             count++;
     }
 

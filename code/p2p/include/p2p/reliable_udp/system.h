@@ -15,6 +15,7 @@ int p2p_rudp_systeminit(
     if (0 > p2p_rudpdisp_init(&sys->disp, client, psys))
         return -1;
 
+    sys->newpack_evfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     return 0;
 }
 
@@ -47,6 +48,7 @@ int p2p_rudp_systemend(
     if (!sys) return -1;
 
     p2p_rudpdisp_end(&sys->disp);
+    close(sys->newpack_evfd);
 
     return 0;
 }

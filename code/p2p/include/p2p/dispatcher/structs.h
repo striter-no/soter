@@ -2,6 +2,7 @@
 #include <p2p/peers.h>
 #include <p2p/gossip.h>
 #include <p2p/reliable_udp/system.h>
+#include <stdint.h>
 
 #ifndef P2P_DISPATCHER_STRUCTS
 
@@ -16,8 +17,18 @@ typedef struct {
     p2p_rudp_dispatcher *rudp_disp;
     p2p_listener        *listener;
     p2p_peers_system    *psys;
-    gossip_system       *gossip;    
+    gossip_system       *gossip;
+
+    nnet_fd              state_nfd;
+    prot_array           state_evfds;
+    int                  sstate_evfd;
 } p2p_dispatcher;
+
+typedef struct {
+    naddr_t  ip;
+    uint32_t UID;
+    int      stfd;
+} p2p_state;
 
 typedef enum {
     SANITY_OK,

@@ -41,15 +41,20 @@ int p2p_rudp_chan_newpack(
 
 int p2p_rudp_chan_awaitpack(
     p2p_rudp_channel *chan,
-    udp_packet       **out,
     int              timeout
 ){
     if (!chan) return -1;
 
     if (0 >= evfd_wait(chan->reordered_fd, POLLIN, timeout))
         return -1;
+    return 0;
+}
 
-    udp_packet *pack;
+int p2p_rudp_chan_getpack(
+    p2p_rudp_channel *chan,
+    udp_packet       **out
+){
+    udp_packet *pack = NULL;
     if (0 > prot_queue_pop(&chan->reoredered_queue, &pack))
         return -1;
 
@@ -140,9 +145,7 @@ static void p2p_rudp_check_chtimeouts(
             i++;
             SLOG_DEBUG("[rudpdisp] rentrasmissing packet...");
             continue;
-        } else if (pkt->retransmit_count == 0){
-            // first sending ever
-            
+        } else if (pkt->retransmit_count == 0) {
             uint32_t peer_id = pkt->copy_pack->h_to;
             p2p_peer *p = p2p_psystem_peer(psys, peer_id);
             if (!p) {
@@ -156,8 +159,8 @@ static void p2p_rudp_check_chtimeouts(
             udp_pack_send(cli, retranslate_udp(pkt->copy_pack, 1), p->fd);
             chan->next_seq++;
             pkt->retransmit_count++;
-            i++;
         }
+        i++;
     }
 
     prot_array_unlock(&chan->pending_queue);
@@ -172,56 +175,44 @@ static void p2p_rudp_check_timeouts(p2p_rudp_dispatcher *disp){
     prot_table_unlock(&disp->channels);
 }
 
-static void *p2p_rudpdisp_senderworker(void *_args){
-    p2p_rudp_dispatcher *disp = _args;
-    
-    while (atomic_load(&disp->is_active)){
-        int r = evfd_wait(disp->outgoing_fd, POLLIN, 100);
+static void __sender(p2p_rudp_dispatcher *disp){
+    udp_packet *pkt;
+    if (0 > prot_queue_pop(&disp->outgoing_packs, (void**)&pkt)){
+        SLOG_ERROR("[rudpdisp][senderworker] prot_queue_pop()");
+        return;
+    }
 
-        p2p_rudp_check_timeouts(disp);
+    if (!pkt) return;
 
-        if (r <= 0) continue;
-
-        udp_packet *pkt;
-        if (0 > prot_queue_pop(&disp->outgoing_packs, (void**)&pkt)){
-            SLOG_ERROR("[rudpdisp][senderworker] prot_queue_pop()");
-            continue;
-        }
-
-        if (!pkt) continue;
-
-        SLOG_DEBUG("[rudpdisp] new outgoing packet");
-        SLOG_DEBUG("[rudpdisp] outgoing for %u", ntohl(pkt->h_to));
-        uint32_t peer_id = ntohl(pkt->h_to);
-        p2p_rudp_channel *chan = NULL;
-        if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
-            SLOG_DEBUG("[rudpdisp] made new chan %u", peer_id);
-
-            p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
-            if (!p) {
-                SLOG_ERROR("[rudpdisp] PSYS does not know about peer: %u", peer_id);
-                SLOG_DEBUG("[thread] FREEING packet: %p", pkt); 
-                free(pkt);
-                continue;
-            }
-
-            p2p_rudpdisp_newchan(disp, peer_id, p->fd, &chan);
-        }
+    SLOG_DEBUG("[rudpdisp] new outgoing packet");
+    SLOG_DEBUG("[rudpdisp] outgoing for %u", ntohl(pkt->h_to));
+    uint32_t peer_id = ntohl(pkt->h_to);
+    p2p_rudp_channel *chan = NULL;
+    if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
+        SLOG_DEBUG("[rudpdisp] made new chan %u", peer_id);
 
         p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
         if (!p) {
             SLOG_ERROR("[rudpdisp] PSYS does not know about peer: %u", peer_id);
             SLOG_DEBUG("[thread] FREEING packet: %p", pkt); 
             free(pkt);
-            continue;
+            return;
         }
 
-        SLOG_DEBUG("[rudpdisp] just SENT packet with SEQ %u", chan->next_seq);
-        p2p_rudp_chan_newpack(chan, pkt, peer_id);
-        free(pkt);
+        p2p_rudpdisp_newchan(disp, peer_id, p->fd, &chan);
     }
 
-    return NULL;
+    p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
+    if (!p) {
+        SLOG_ERROR("[rudpdisp] PSYS does not know about peer: %u", peer_id);
+        SLOG_DEBUG("[thread] FREEING packet: %p", pkt); 
+        free(pkt);
+        return;
+    }
+
+    SLOG_DEBUG("[rudpdisp] just SENT packet with SEQ %u", chan->next_seq);
+    p2p_rudp_chan_newpack(chan, pkt, peer_id);
+    free(pkt);
 }
 
 static void p2p_rudpdisp_chreordering(
@@ -229,11 +220,17 @@ static void p2p_rudpdisp_chreordering(
     p2p_rudp_channel    *chan,
     p2p_peers_system    *psys
 ){
+    // SLOG_DEBUG("waiting network q");
     prot_queue_lock(&chan->network_queue);
     udp_packet *pack;
 
+    // SLOG_DEBUG("unlocked");
     while (0 == prot_queue_pop(&chan->network_queue, &pack)){
-        if (!pack) continue;
+        
+        if (!pack) {
+            // SLOG_DEBUG("skipping NULL reord");
+            break;
+        }
 
         uint32_t expected = (chan->last_recved_seq == UINT32_MAX) ? 0 : chan->last_recved_seq + 1;
         uint32_t diff = pack->seq - expected;
@@ -294,91 +291,115 @@ static void p2p_rudpdisp_chreordering(
 }
 
 static void p2p_rudpdisp_reordering(p2p_rudp_dispatcher *disp){
+    // SLOG_DEBUG("reorder lock");
     prot_table_lock(&disp->channels);
+    // SLOG_DEBUG("reorder lock in");
     for (size_t i = 0; i < disp->channels.table.array.len; i++){
+        // SLOG_DEBUG("reordering channel %zu\n", i);
         dyn_pair *p = dyn_array_at(&disp->channels.table.array, i);
+        // SLOG_DEBUG("chreordering", i);
         p2p_rudpdisp_chreordering(disp, p->second, disp->psys);
     }
     prot_table_unlock(&disp->channels);
+}
+
+
+static void __worker(p2p_rudp_dispatcher *disp){
+    udp_packet *pkt;
+    if (0 > prot_queue_pop(&disp->passed_packs, (void**)&pkt)){
+        SLOG_ERROR("[rudpdisp][worker] prot_queue_pop()");
+        return;
+    }
+
+    if (!pkt) return;
+
+    SLOG_DEBUG("[rudpdisp] new incoming packet");
+    
+    uint32_t peer_id = pkt->h_from;
+    p2p_rudp_channel *chan = NULL;
+    if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
+        SLOG_DEBUG("[rudpdisp] made new chan %u", peer_id);
+        p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
+        if (!p) {
+            SLOG_ERROR("[rudpdisp] PSYS does not know about peer: %u", peer_id);
+            goto end;
+        }
+        p2p_rudpdisp_newchan(disp, peer_id, p->fd, &chan);
+    }
+
+    if (pkt->packtype == P2P_PACK_DATA){
+        uint32_t seq = pkt->seq;
+        SLOG_DEBUG("[rudpdisp] just READ packet with SEQ %u", seq);
+        
+        prot_queue_push(&chan->network_queue, &pkt);
+        write(chan->netpack_fd, &(uint64_t){1}, 8);
+
+        p2p_rudp_sendack(disp->client, chan, seq);
+        chan->last_ack_sent = seq;
+
+        // no free(pkt);
+        return;
+    } else if (pkt->packtype == P2P_PACK_RACK){
+        prot_array_lock(&chan->pending_queue);
+        
+        bool was_ack = false;
+        for (size_t i = 0; i < chan->pending_queue.array.len;){
+            p2p_rudp_pending_pkt *ppkt = prot_array_at(&chan->pending_queue, i);
+            if (ppkt->seq == pkt->seq){
+                SLOG_DEBUG("[rudpdisp][ack] acked in channel %u, seq %u", peer_id, ppkt->seq);
+                chan->last_ack_received = pkt->seq;
+
+                free(ppkt->copy_pack);
+                prot_array_remove(&chan->pending_queue, i);
+                was_ack = true;
+                break;
+            } else {
+                i++;
+            }
+        }
+
+        if (!was_ack){
+            SLOG_WARNING("[rudpdisp][warn] ACK was recved, but no suitable SEQ was found: %u", pkt->seq);
+        }
+
+        prot_array_unlock(&chan->pending_queue);
+    }
+
+end:
+    free(pkt);
 }
 
 // serves incoming messages
 static void *p2p_rudpdisp_worker(void *_args){
     p2p_rudp_dispatcher *disp = _args;
 
+    struct pollfd fds[2] = {
+        {.fd = disp->newpack_fd, .events = POLLIN},
+        {.fd = disp->outgoing_fd, .events = POLLIN}
+    };
+
     while (atomic_load(&disp->is_active)){
-        int ret = evfd_wait(disp->newpack_fd, POLLIN, 100);
+        int ret = poll(fds, 2, 100);
 
         p2p_rudpdisp_reordering(disp);
-
+        p2p_rudp_check_timeouts(disp);
+        
         if (ret == 0) continue;
         else if (ret < 0) {
             perror("rudpdisp: poll()");
             continue;
         }
 
-        udp_packet *pkt;
-        if (0 > prot_queue_pop(&disp->passed_packs, (void**)&pkt)){
-            SLOG_ERROR("[rudpdisp][worker] prot_queue_pop()");
-            break;
+        uint64_t r;
+        if (fds[0].revents & POLLIN){
+            __worker(disp);
+            read(fds[0].fd, &r, 8);
         }
 
-        if (!pkt) continue;
-
-        SLOG_DEBUG("[rudpdisp] new incoming packet");
-        
-        uint32_t peer_id = pkt->h_from;
-        p2p_rudp_channel *chan = NULL;
-        if (0 > p2p_rudpdisp_getchan(disp, &chan, peer_id)){
-            SLOG_DEBUG("[rudpdisp] made new chan %u", peer_id);
-            p2p_peer *p = p2p_psystem_peer(disp->psys, peer_id);
-            if (!p) {
-                SLOG_ERROR("[rudpdisp] PSYS does not know about peer: %u", peer_id);
-                goto end;
-            }
-            p2p_rudpdisp_newchan(disp, peer_id, p->fd, &chan);
+        if (fds[1].revents & POLLIN){
+            __sender(disp);
+            read(fds[1].fd, &r, 8);
         }
-
-        if (pkt->packtype == P2P_PACK_DATA){
-            uint32_t seq = pkt->seq;
-            SLOG_DEBUG("[rudpdisp] just READ packet with SEQ %u", seq);
-            
-            prot_queue_push(&chan->network_queue, &pkt);
-            write(chan->netpack_fd, &(uint64_t){1}, 8);
-
-            p2p_rudp_sendack(disp->client, chan, seq);
-            chan->last_ack_sent = seq;
-
-            // no free(pkt);
-            continue;
-        } else if (pkt->packtype == P2P_PACK_RACK){
-            prot_array_lock(&chan->pending_queue);
-            
-            bool was_ack = false;
-            for (size_t i = 0; i < chan->pending_queue.array.len;){
-                p2p_rudp_pending_pkt *ppkt = prot_array_at(&chan->pending_queue, i);
-                if (ppkt->seq == pkt->seq){
-                    SLOG_DEBUG("[rudpdisp][ack] acked in channel %u, seq %u", peer_id, ppkt->seq);
-                    chan->last_ack_received = pkt->seq;
-
-                    free(ppkt->copy_pack);
-                    prot_array_remove(&chan->pending_queue, i);
-                    was_ack = true;
-                    break;
-                } else {
-                    i++;
-                }
-            }
-
-            if (!was_ack){
-                SLOG_WARNING("[rudpdisp][warn] ACK was recved, but no suitable SEQ was found: %u", pkt->seq);
-            }
-
-            prot_array_unlock(&chan->pending_queue);
-        }
-
-end:
-        free(pkt);
     }
     
     return NULL;
@@ -388,10 +409,8 @@ void p2p_rudpdisp_stop(
     p2p_rudp_dispatcher *disp
 ){
     atomic_store(&disp->is_active, false);
-    pthread_join(disp->incoming_thread, NULL);
-    pthread_join(disp->outgoing_thread, NULL);
-    disp->incoming_thread = 0;
-    disp->outgoing_thread = 0;
+    SLOG_DEBUG("joining main thread");
+    pthread_join(disp->main_thread, NULL);
 }
 
 int p2p_rudpdisp_run(
@@ -401,18 +420,8 @@ int p2p_rudpdisp_run(
     atomic_store(&disp->is_active, true);
     disp->newchan_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
 
-    int r;
-    r = pthread_create(
-        &disp->outgoing_thread,
-        NULL,
-        &p2p_rudpdisp_senderworker,
-        disp
-    );
-
-    if (r != 0) return r;
-
-    r = pthread_create(
-        &disp->incoming_thread,
+    int r = pthread_create(
+        &disp->main_thread,
         NULL,
         &p2p_rudpdisp_worker,
         disp
@@ -426,8 +435,10 @@ void p2p_rudpdisp_end(
 ){
     if (!disp) return;
 
+    SLOG_DEBUG("dispatcher ending");
     p2p_rudpdisp_stop(disp);
 
+    SLOG_DEBUG("closing channels");
     for (size_t i = 0; i < disp->channels.table.array.len; i++){
         dyn_pair *p = dyn_array_at(&disp->channels.table.array, i);
         p2p_rudp_channel *chan = p->second;

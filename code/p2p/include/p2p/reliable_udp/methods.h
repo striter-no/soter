@@ -35,7 +35,7 @@ typedef struct {
     int        reordered_fd;
     int        netpack_fd;
     int        sended_fd;
-    uint32_t   UID;
+    uint32_t   UID, senderUID;
     nnet_fd    nfd;
 } p2p_rudp_channel;
 
@@ -48,8 +48,7 @@ typedef struct {
     prot_queue    outgoing_packs;
 
     atomic_bool   is_active;
-    pthread_t     incoming_thread;
-    pthread_t     outgoing_thread;
+    pthread_t     main_thread;
     int           outgoing_fd;
     int           newpack_fd;
     int           newchan_fd;
@@ -62,20 +61,21 @@ typedef struct {
 
 int p2p_rudpdisp_waitchan(
     p2p_rudp_dispatcher  *disp,
-    uint32_t              peer_uid
+    uint32_t              peer_uid,
+    int                   timeout
 ){
     p2p_rudp_channel *ch = prot_table_get(&disp->channels, &peer_uid);
-    if (ch != NULL) return 0;
+    if (ch != NULL) return 1;
 
     while (true){
-        int r = evfd_wait(disp->newchan_fd, POLLIN, -1);
+        int r = evfd_wait(disp->newchan_fd, POLLIN, timeout);
         if (r <= 0) 
             return r;
 
         if (prot_table_get(&disp->channels, &peer_uid) == NULL)
             continue;
 
-        return 0;
+        return 1;
     }
 }
 
@@ -92,7 +92,7 @@ int p2p_rudpdisp_getchan(
     return 0;
 }
 
-void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, nnet_fd nfd){
+void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, uint32_t senderUID, nnet_fd nfd){
     out->next_seq = 0;
     out->last_ack_received = 0;
     out->last_ack_sent     = 0;
@@ -108,6 +108,7 @@ void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, nnet_fd nfd){
     out->UID = UID;
     out->nfd = nfd;
     out->last_recved_seq  = UINT32_MAX;
+    out->senderUID = senderUID;
 }
 
 int p2p_rudpdisp_newchan(
@@ -117,7 +118,7 @@ int p2p_rudpdisp_newchan(
     p2p_rudp_channel    **out
 ){
     p2p_rudp_channel chan;
-    p2p_rudp_chaninit(&chan, peer_uid, nfd);
+    p2p_rudp_chaninit(&chan, peer_uid, syst->client->UID, nfd);
 
     prot_table_set(&syst->channels, &peer_uid, &chan);
     write(syst->newchan_fd, &(uint64_t){1}, 8);

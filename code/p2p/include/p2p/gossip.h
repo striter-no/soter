@@ -29,6 +29,11 @@ void gossip_system_end(gossip_system *sys){
     prot_array_end(&sys->gossips);
 }
 
+bool gossip_entry_check(gossip_system *sys, gossip_entry entry){
+    // SLOG_DEBUG("[gossip] entry check: %u count", prot_array_count(&sys->gossips, &entry));
+    return prot_array_count(&sys->gossips, &entry) != 0 || entry.uid == sys->selfuid;
+}
+
 int gossip_new_entry(gossip_system *sys, gossip_entry entry){
     if (prot_array_count(&sys->gossips, &entry) != 0 || entry.uid == sys->selfuid) {
         return -1;
@@ -38,12 +43,13 @@ int gossip_new_entry(gossip_system *sys, gossip_entry entry){
 
 int gossip_system_clear(gossip_system *sys){
     prot_array_lock(&sys->gossips);
-    for (size_t i = 0; i < sys->gossips.array.len; i++){
-        if (0 > prot_array_remove(&sys->gossips, 0)) {
-            prot_array_unlock(&sys->gossips);
-            return -1;
-        }
-    }
+    sys->gossips.array.len = 0;
+    // for (size_t i = 0; i < sys->gossips.array.len; i++){
+    //     if (0 > prot_array_remove(&sys->gossips, 0)) {
+    //         prot_array_unlock(&sys->gossips);
+    //         return -1;
+    //     }
+    // }
     prot_array_unlock(&sys->gossips);
     return 0;
 }
