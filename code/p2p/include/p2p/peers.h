@@ -188,7 +188,7 @@ int p2p_psystem_punchnat(
     }
 
     peer.peer_id   = peer_uid;
-    peer.last_seen = 0;
+    peer.last_seen = get_timestump();
     peer.status    = P2P_STAT_PUNCHING;
     peer.last_seq  = 0;
     peer.status_evfd = evfd == NULL? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): *evfd;
@@ -223,7 +223,7 @@ int p2p_peer_register(
 
     p2p_peer peer;
     peer.peer_id   = peer_uid;
-    peer.last_seen = 0;
+    peer.last_seen = get_timestump();
     peer.status    = status;
     peer.last_seq  = 0;
     peer.fd        = netfdq(peer_addr);

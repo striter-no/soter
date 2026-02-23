@@ -22,6 +22,8 @@ typedef struct {
     nnet_fd              state_nfd;
     prot_array           state_evfds;
     int                  sstate_evfd;
+
+    int                  push_TO_evfd;
 } p2p_dispatcher;
 
 typedef struct {

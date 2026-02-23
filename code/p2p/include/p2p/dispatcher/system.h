@@ -30,6 +30,7 @@ int p2p_dispatcher_init(
     dispatcher->sstate_evfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
     dispatcher->state_evfds = prot_array_create(sizeof(p2p_state));
     dispatcher->state_nfd   = netfdq(state_server);
+    dispatcher->push_TO_evfd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
 
     return 0;
 }
@@ -37,6 +38,23 @@ int p2p_dispatcher_init(
 static void p2p_dispatcher_liveness_check(p2p_dispatcher *disp){
     p2p_peers_system *psys = disp->psys;
     p2p_udp          *cli  = disp->p_client;
+
+    prot_array_lock(&psys->pushing_peers);
+    for (size_t i = 0; i < psys->pushing_peers.array.len;){
+        p2p_peer *peer = dyn_array_at(&psys->pushing_peers.array, i);
+        
+        if (get_timestump() - peer->last_seen >= P2P_PEER_DEAD_DT){
+            peer->status = P2P_STAT_TIMEOUT;
+        }
+
+        if (peer->status == P2P_STAT_TIMEOUT){
+            SLOG_DEBUG("[disp][liveness] removing PUSHED timeouted peer %u", peer->peer_id);
+            prot_array_remove(&psys->pushing_peers, i);
+
+            write(disp->push_TO_evfd, &(uint64_t){1}, 8);
+        } else i++;
+    }
+    prot_array_unlock(&psys->pushing_peers);
 
     prot_table_lock(&psys->peers);
     for (size_t i = 0; i < psys->peers.table.array.len;){
@@ -174,6 +192,7 @@ void p2p_dispatcher_end(p2p_dispatcher *dispatcher){
 
     prot_array_end(&dispatcher->state_evfds);
     close(dispatcher->sstate_evfd);
+    close(dispatcher->push_TO_evfd);
 }
 
 int p2p_dispatcher_start(p2p_dispatcher *dispatcher){
