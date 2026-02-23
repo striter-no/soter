@@ -13,6 +13,11 @@ int main(void){
     unsigned   bind_port = 9000;
     naddr_t    addr      = naddr_make4(nipv4(bind_ip, bind_port));
 
+    if (0 > soter_crypto_init()){
+        SLOG_FATAL("soter crypto init failed");
+        return -1;
+    }
+
     p2p_udp    server;
     udp_create(&server, 0);
     udp_bind(&server, addr);

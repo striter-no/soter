@@ -42,6 +42,11 @@ int soter_client(
     SOTER_LOGER = logger_init(STDERR_FILENO);
     logger_set_level(&SOTER_LOGER, min_level);
 
+    if (0 > soter_crypto_init()){
+        SLOG_FATAL("soter crypto init failed");
+        return -1;
+    }
+
     if (0 > udp_create(&client->net_client, __rnd_uid())){
         SLOG_ERROR("soter_client: failed to create network client");
         return -1;
