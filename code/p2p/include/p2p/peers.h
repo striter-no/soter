@@ -8,6 +8,9 @@
 #include <stdbool.h>
 #include <sys/eventfd.h>
 
+#include <crypto/system.h>
+#include <crypto/hanshake.h>
+
 #ifndef P2P_PEER_DEAD_DT
 #define P2P_PEER_DEAD_DT 5
 #endif
@@ -33,6 +36,9 @@ typedef struct {
     uint32_t   last_seen;
     p2p_status status;
     int        status_evfd;
+
+    soter_session_keys sk;
+    unsigned char pubkey[SOTER_PUBKEY_BYTES];
 } p2p_peer;
 
 typedef struct {
@@ -40,7 +46,8 @@ typedef struct {
     p2p_udp    *p_client;
     prot_table  peers;
 
-    prot_array  pushing_peers;
+    prot_array    pushing_peers;
+    soter_keypair kp;
 } p2p_peers_system;
 
 uint32_t get_timestump(){
@@ -56,12 +63,14 @@ void p2p_peer_changestat(
 
 int p2p_psystem_init(
     p2p_peers_system *sys,
-    p2p_udp          *p_client
+    p2p_udp          *p_client,
+    soter_keypair     kp
 ){
     sys->pushing_peers = prot_array_create(sizeof(p2p_peer));
     sys->peers         = prot_table_create(sizeof(uint32_t), sizeof(p2p_peer), DYN_OWN_BOTH);
 
     sys->p_client = p_client;
+    sys->kp       = kp;
     return 0;
 }
 
@@ -88,6 +97,7 @@ int p2p_psystem_punchnat(
     p2p_peers_system *sys,
     uint32_t          peer_uid,
     naddr_t           peer_addr,
+    unsigned char    *peer_pubk,
     int              *evfd,
     int               packs_n
 ){
@@ -103,6 +113,27 @@ int p2p_psystem_punchnat(
     peer.status    = P2P_STAT_PUNCHING;
     peer.last_seq  = 0;
     peer.status_evfd = evfd == NULL? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): *evfd;
+    memcpy(peer.pubkey, peer_pubk, SOTER_PUBKEY_BYTES);
+
+    if (peer_uid < sys->p_client->UID){ // server
+        if (0 > soter_handshake_server(
+            peer_pubk,
+            &sys->kp,
+            &peer.sk
+        )){
+            SLOG_ERROR("[p2p][punchn][serv] failed to perform handshake");
+            return -1;
+        }
+    } else { // client
+        if (0 > soter_handshake_client(
+            peer_pubk,
+            &sys->kp,
+            &peer.sk
+        )){
+            SLOG_ERROR("[p2p][punchn][cli] failed to perform handshake");
+            return -1;
+        }
+    }
 
     // add to pending
     prot_array_push(&sys->pushing_peers, &peer);
@@ -115,7 +146,9 @@ int p2p_peer_register(
     naddr_t           peer_addr,
     uint32_t          peer_uid,
     p2p_status        status,
-    int               efd
+    int               efd,
+
+    const unsigned char *peer_pubk
 ){
     if (!sys) return -1;
 
@@ -126,6 +159,27 @@ int p2p_peer_register(
     peer.last_seq  = 0;
     peer.fd        = netfdq(peer_addr);
     peer.status_evfd = efd == -1? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): efd;
+    memcpy(peer.pubkey, peer_pubk, SOTER_PUBKEY_BYTES);
+    
+    if (peer_uid < sys->p_client->UID){ // server
+        if (0 > soter_handshake_server(
+            peer_pubk,
+            &sys->kp,
+            &peer.sk
+        )){
+            SLOG_ERROR("[p2p][reg][serv] failed to perform handshake");
+            return -1;
+        }
+    } else { // client
+        if (0 > soter_handshake_client(
+            peer_pubk,
+            &sys->kp,
+            &peer.sk
+        )){
+            SLOG_ERROR("[p2p][reg][cli] failed to perform handshake");
+            return -1;
+        }
+    }
 
     // add to pending
     if (status == P2P_STAT_PUNCHING){
@@ -193,11 +247,12 @@ int p2p_psystem_makealive(
             prot_array_remove(&sys->pushing_peers, i);
             
             copy.status_evfd = el->status_evfd;
-            copy.last_seen = get_timestump();
-            // copy.status    = P2P_STAT_ACTIVE;
-            copy.peer_id   = el->peer_id;
-            copy.fd        = el->fd;
-            copy.last_seq  = 0;
+            copy.last_seen   = get_timestump();
+            copy.peer_id     = el->peer_id;
+            copy.fd          = el->fd;
+            copy.last_seq    = 0;
+            copy.sk          = el->sk;
+            memcpy(copy.pubkey, el->pubkey, SOTER_PUBKEY_BYTES);
             
             p2p_peer_changestat(&copy, P2P_STAT_ACTIVE);
             SLOG_DEBUG("[disp][p2p] changed stat for %u to ACTIVE", copy.status_evfd);

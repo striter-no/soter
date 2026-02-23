@@ -1,4 +1,5 @@
 #include "peers.h"
+#include <crypto/system.h>
 
 #ifndef GOSSIP_DT
 #define GOSSIP_DT 3
@@ -17,11 +18,14 @@ typedef struct {
 typedef struct {
     prot_array gossips;
     uint32_t   selfuid;
+
+    p2p_peers_system *psyst;
 } gossip_system;
 
-int gossip_system_init(gossip_system *sys, uint32_t selfuid){
+int gossip_system_init(gossip_system *sys, p2p_peers_system *psyst, uint32_t selfuid){
     sys->gossips = prot_array_create(sizeof(gossip_entry));
     sys->selfuid = selfuid;
+    sys->psyst = psyst;
     return 0;
 }
 
@@ -44,22 +48,23 @@ int gossip_new_entry(gossip_system *sys, gossip_entry entry){
 int gossip_system_clear(gossip_system *sys){
     prot_array_lock(&sys->gossips);
     sys->gossips.array.len = 0;
-    // for (size_t i = 0; i < sys->gossips.array.len; i++){
-    //     if (0 > prot_array_remove(&sys->gossips, 0)) {
-    //         prot_array_unlock(&sys->gossips);
-    //         return -1;
-    //     }
-    // }
     prot_array_unlock(&sys->gossips);
     return 0;
 }
 
 int gossip_system_update(
     gossip_system *sys,
-    void *gossip_data, size_t gossip_dsize
+    udp_packet    *encrypted,
+    p2p_peer      *from_peer
 ){
     if (!sys) return -1;
     
+    udp_packet *decrypted = soter_uncrypt_pack(&from_peer->sk, encrypted, false);
+    
+    size_t gossip_dsize = decrypted->d_size;
+    void   *gossip_data = decrypted->data;
+
+
     if (gossip_dsize % sizeof(gossip_entry) != 0) {
         SLOG_ERROR("[gossip] failed to update local DB, incoming data has invalid size (%zu)", gossip_dsize);
         return -1;
@@ -71,7 +76,6 @@ int gossip_system_update(
     local_array.len = gossip_dsize / sizeof(gossip_entry);
     local_array.elements = gossip_data;
 
-    
     prot_array_lock(&sys->gossips);
     size_t old_l = sys->gossips.array.len;
     for (size_t i = 0; i < local_array.len; i++){
@@ -83,22 +87,25 @@ int gossip_system_update(
         SLOG_INFO("[gossip] acquired %zu new gossip entries", sys->gossips.array.len - old_l);
     }
     prot_array_unlock(&sys->gossips);
+    free(decrypted);
     return 0;
 }
 
 udp_packet *gossip_make_packet(
     gossip_system *system,
-    uint32_t      from,
-    uint32_t      to
+    p2p_peer      *peer_to
 ){
     prot_array_lock(&system->gossips);
     udp_packet *pack = udp_make_pack(
-        0, from, 0, 
+        0, system->selfuid, 0, 
         P2P_PACK_GOSSIP, system->gossips.array.elements, 
         sizeof(gossip_entry) * system->gossips.array.len
     );
     prot_array_unlock(&system->gossips);
-    return pack;
+    udp_packet *encr = soter_crypto_pack(&peer_to->sk, pack, true);
+    free(pack);
+
+    return encr;
 }
 
 #endif

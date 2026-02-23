@@ -1,5 +1,6 @@
 #include "structs.h"
 #include "methods.h"
+#include <stdint.h>
 #include <sys/eventfd.h>
 
 #ifndef P2P_STATE_SKIPTICKS 
@@ -73,8 +74,7 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
         p2p_peer *peer = p->second;
         udp_packet *gs_pck = gossip_make_packet(
             gsip, 
-            cli->UID, 
-            peer->peer_id
+            peer
         );
         
         udp_pack_send(cli, gs_pck, peer->fd);
@@ -85,6 +85,10 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
 }
 
 static void p2p_dispatcher_stateserving(p2p_dispatcher *disp){
+    unsigned char data[sizeof(uint32_t) + SOTER_PUBKEY_BYTES] = {0};
+    memcpy(data, &disp->p_client->UID, sizeof(uint32_t));
+    memcpy(data + sizeof(uint32_t), &disp->psys->kp.public_key, SOTER_PUBKEY_BYTES);
+
     udp_packet *pack = udp_make_pack(
         0, disp->p_client->UID, 
         0, P2P_PACK_STATE, &disp->p_client->UID, sizeof(disp->p_client->UID)

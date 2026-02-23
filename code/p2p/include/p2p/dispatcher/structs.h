@@ -28,6 +28,7 @@ typedef struct {
     naddr_t  ip;
     uint32_t UID;
     int      stfd;
+    unsigned char pubkey[SOTER_PUBKEY_BYTES];
 } p2p_state;
 
 typedef enum {

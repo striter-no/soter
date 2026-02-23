@@ -19,6 +19,8 @@ static uint32_t __rnd_uid(){
 }
 
 typedef struct {
+    soter_keypair      kp;
+
     p2p_udp          net_client;
 
     gossip_system    gsyst;
@@ -27,10 +29,10 @@ typedef struct {
 
     p2p_listener     listener;
     p2p_dispatcher   dispatcher;
-} SoterClient;
+} soter;
 
 int soter_client(
-    SoterClient *client,
+    soter *client,
     naddr_t      state_serv,
     naddr_t      stun1,
     naddr_t      stun2,
@@ -45,17 +47,19 @@ int soter_client(
         return -1;
     }
 
-    if (0 > gossip_system_init(&client->gsyst, client->net_client.UID)){
-        SLOG_ERROR("soter_client: failed to create gossip system");
-        return -1;
-    }
+    client->kp = soter_keypair_make();
 
-    if (0 > p2p_psystem_init(&client->psyst, &client->net_client)){
+    if (0 > p2p_psystem_init(&client->psyst, &client->net_client, client->kp)){
         SLOG_ERROR("soter_client: failed to create peer system");
         return -1;
     }
 
     p2p_psystem_gnattype(&client->psyst, stun1, stun2, __rnd_port());
+
+    if (0 > gossip_system_init(&client->gsyst, &client->psyst, client->net_client.UID)){
+        SLOG_ERROR("soter_client: failed to create gossip system");
+        return -1;
+    }
 
     if (0 > p2p_listener_init(&client->listener, &client->net_client)){
         SLOG_ERROR("soter_client: failed to create peer system");
@@ -90,7 +94,7 @@ int soter_client(
 }
 
 int soter_wait_state(
-    SoterClient *client,
+    soter *client,
     int          timeout
 ){
     int r = evfd_wait(client->dispatcher.sstate_evfd, POLLIN, timeout);
@@ -100,14 +104,14 @@ int soter_wait_state(
 }
 
 p2p_state *soter_get_state(
-    SoterClient *client,
+    soter *client,
     size_t       inx
 ){
     return prot_array_at(&client->dispatcher.state_evfds, inx);
 }
 
 int soter_stun_connect(
-    SoterClient *client,
+    soter *client,
     naddr_t      stun
 ){
     if (0 > p2p_psystem_stunperform(&client->psyst, stun, __rnd_port())) {
@@ -119,19 +123,20 @@ int soter_stun_connect(
 }
 
 p2p_peer *soter_peer(
-    SoterClient *client,
+    soter *client,
     uint32_t     UID
 ){
     return p2p_psystem_peer(&client->psyst, UID);
 }
 
 int soter_p2p_connect(
-    SoterClient *client,
+    soter *client,
     uint32_t     other_UID,
     naddr_t      other_addr,
+    unsigned char other_pubkey[SOTER_PUBKEY_BYTES],
     int         *evfd
 ){
-    if (0 > p2p_psystem_punchnat(&client->psyst, other_UID, other_addr, evfd, 1)){
+    if (0 > p2p_psystem_punchnat(&client->psyst, other_UID, other_addr, other_pubkey, evfd, 1)){
         SLOG_ERROR("soter_client: failed to request NAT punch");
         return -1;
     }
@@ -140,7 +145,7 @@ int soter_p2p_connect(
 }
 
 void soter_end(
-    SoterClient *client
+    soter *client
 ){
     SLOG_DEBUG("ending listener");
     p2p_listener_end(&client->listener);
@@ -165,7 +170,7 @@ void soter_end(
 // -- messages
 
 int soter_acquire_chan(
-    SoterClient      *client,
+    soter      *client,
     p2p_rudp_channel **chan,
     uint32_t          UID,
     int               timeout
@@ -197,7 +202,7 @@ int soter_wait_pack(
 }
 
 int soter_send(
-    SoterClient *client,
+    soter *client,
     uint32_t     other_UID,
     void        *data,
     size_t       size
@@ -217,6 +222,7 @@ int soter_send(
         return -1;
     }
 
+    SLOG_INFO("soter: sending %zu bytes as raw data, %zu in total", size, sizeof(udp_packet) + size);
     return 0;
 }
 
@@ -239,25 +245,6 @@ int soter_recv(
 
     free(out);
     return 0;
-}
-
-int soter_flush(SoterClient *client, uint32_t peer_uid, int timeout_ms) {
-    p2p_rudp_channel *chan = NULL;
-    if (0 > p2p_rudpdisp_getchan(&client->rudp.disp, &chan, peer_uid)) {
-        return -1;
-    }
-    
-    int elapsed = 0;
-    while (elapsed < timeout_ms) {
-        prot_array_lock(&chan->pending_queue);
-        size_t pending = chan->pending_queue.array.len;
-        prot_array_unlock(&chan->pending_queue);
-        
-        if (pending == 0) return 0;  // всё отправлено и подтверждено
-        usleep(10000);  // 10ms
-        elapsed += 10;
-    }
-    return -1;  // таймаут
 }
 
 #endif

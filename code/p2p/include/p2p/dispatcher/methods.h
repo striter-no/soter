@@ -149,7 +149,7 @@ bool disp_method_gossip(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
         return false;
     }
 
-    if (0 > gossip_system_update(disp->gossip, pkt->data, pkt->d_size)){
+    if (0 > gossip_system_update(disp->gossip, pkt, peer)){
         SLOG_ERROR("[disp][gossip] failed to update system");
         return false;
     }
@@ -173,8 +173,9 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
         memcpy(&state, pkt->data, sizeof(state));
         naddr_t other_addr;
         uint32_t other_uid;
+        unsigned char peer_pubk[SOTER_PUBKEY_BYTES] = {0};
 
-        p2p_state_peer2info(state, &other_addr, &other_uid);
+        p2p_state_peer2info(state, &other_addr, &other_uid, peer_pubk);
         gossip_entry entry = (gossip_entry){
             .ip = naddr_to_uint32(other_addr),
             .uid = other_uid,
@@ -185,7 +186,8 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
             return false;
         }
 
-        int stfd = p2p_peer_register(disp->psys, other_addr, other_uid, P2P_STAT_PUNCHING, -1);
+        
+        int stfd = p2p_peer_register(disp->psys, other_addr, other_uid, P2P_STAT_PUNCHING, -1, peer_pubk);
         SLOG_DEBUG("[p2pnp][sserv] stfd: %i (%s:%u %u)", stfd, other_addr.ip.v4.ip, other_addr.ip.v4.port, other_uid);
         
         gossip_new_entry(disp->gossip, entry);
@@ -194,8 +196,9 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
         p2p_state gstate = {
             .stfd = stfd,
             .ip = other_addr,
-            .UID = other_uid
+            .UID = other_uid,
         };
+        memcpy(gstate.pubkey, state.pubkey, SOTER_PUBKEY_BYTES);
         
         prot_array_push(&disp->state_evfds, &gstate);
         write(disp->sstate_evfd, &(uint64_t){1}, 8);

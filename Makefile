@@ -1,6 +1,15 @@
+CC = gcc
+CFLAGS = -g
+IFLAGS = -Icode/p2p/include
+
+# CFLAGS += -fsanitize=address,undefined
+
+LDFLAGS = 
+LDLIBS = -lsodium
+
 all:
-	gcc -g  -o ./bin/main ./code/main.c -Icode/p2p/include # -fsanitize=address,undefined
-	gcc -g  -o ./bin/sser ./code/stateserver.c -Icode/p2p/include # -fsanitize=address,undefined
+	$(CC) $(CFLAGS) -o ./bin/main ./code/main.c $(LDFLAGS) $(LDLIBS) $(IFLAGS)
+	$(CC) $(CFLAGS) -o ./bin/sser ./code/stateserver.c $(LDFLAGS) $(LDLIBS) $(IFLAGS)
 setup:
 	mkdir -p bin
 run:

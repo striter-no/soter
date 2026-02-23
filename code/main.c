@@ -1,5 +1,6 @@
 #include <soternet/interface.h>
 
+
 int main(void){
     naddr_t servers[] = {
         naddr_domain("stun.l.google.com", 19302),
@@ -7,16 +8,14 @@ int main(void){
         naddr_make4(nipv4("89.19.215.10", 9000))
     };
 
-    SoterClient client;
-    soter_client(&client, servers[2], servers[0], servers[1], LOG_DEBUG);
+    soter client;
+    soter_client(&client, servers[2], servers[0], servers[1], LOG_INFO);
 
     printf("My NAT type: %s\n", strnattype(client.psyst.nat_type));
     soter_wait_state(&client, -1);
 
-    // picking first client
-
     p2p_state state = *soter_get_state(&client, 0);
-    soter_p2p_connect(&client, state.UID, state.ip, &state.stfd);
+    soter_p2p_connect(&client, state.UID, state.ip, state.pubkey, &state.stfd);
     printf("Got peer: %s:%u:%u\n", state.ip.ip.v4.ip, state.ip.ip.v4.port, state.UID);
     
     evfd_wait(state.stfd, POLLIN, -1);
@@ -39,8 +38,6 @@ int main(void){
     printf("got: %.*s\n", (int)dsize, (char*)data);
     free(data);
 
-    // soter_flush(&client, state.UID, 50);
-    // sleep(4);
 end:      
     soter_end(&client);
 }

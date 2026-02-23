@@ -56,10 +56,11 @@ int main(void){
             continue;
         }
 
-
+        unsigned char pubkey[SOTER_PUBKEY_BYTES] = {0};
         memcpy(&UID, incoming->data, sizeof(uint32_t));
+        memcpy(pubkey, incoming->data + sizeof(uint32_t), SOTER_PUBKEY_BYTES);
         naddr_t from_ip = naddr_nfd2str(from);
-        p2p_state_peer state = p2p_state_info2peer(from_ip, UID);
+        p2p_state_peer state = p2p_state_info2peer(from_ip, UID, pubkey);
 
         if (peers.arr.len == 0){
             udp_packet *pack = udp_make_pack(0, 0, UID, P2P_PACK_STATE, "0", 1);
@@ -89,7 +90,7 @@ int main(void){
             }
 
             naddr_t peer_ip; uint32_t peer_uid;
-            p2p_state_peer2info(*prev, &peer_ip, &peer_uid);
+            p2p_state_peer2info(*prev, &peer_ip, &peer_uid, NULL);
 
             SLOG_INFO("[run] peer sended: %s:%u:%u", peer_ip.ip.v4.ip, peer_ip.ip.v4.port, peer_uid);
             udp_packet *pack = udp_make_pack(0, 0, UID, P2P_PACK_STATE, prev, sizeof(*prev));
