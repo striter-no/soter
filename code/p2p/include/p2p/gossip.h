@@ -58,8 +58,9 @@ int gossip_system_update(
     p2p_peer      *from_peer
 ){
     if (!sys) return -1;
-    
+
     udp_packet *decrypted = soter_uncrypt_pack(&from_peer->sk, encrypted, false);
+    
     
     size_t gossip_dsize = decrypted->d_size;
     void   *gossip_data = decrypted->data;

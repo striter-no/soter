@@ -9,7 +9,7 @@
 
 int main(void){
     SOTER_LOGER = logger_init(STDOUT_FILENO);
-    const char bind_ip[] = "127.0.0.1";
+    const char bind_ip[] = "0.0.0.0";
     unsigned   bind_port = 9000;
     naddr_t    addr      = naddr_make4(nipv4(bind_ip, bind_port));
 
@@ -70,6 +70,8 @@ int main(void){
         naddr_t from_ip = naddr_nfd2str(from);
         p2p_state_peer state = p2p_state_info2peer(from_ip, UID, pubkey);
 
+        SLOG_DEBUG("packet from %s:%u", from_ip.ip.v4.ip, from_ip.ip.v4.port);
+
         if (peers.arr.len == 0){
             udp_packet *pack = udp_make_pack(0, 0, UID, P2P_PACK_STATE, "0", 1);
             udp_pack_send(&server, pack, from);
@@ -90,8 +92,9 @@ int main(void){
                 continue;
             }
 
-            if (dyn_array_count(&alive.array, &prev->uid) == 0){
-                SLOG_INFO("[run] removing candidate from queue, due its un-aliveness");
+            uint64_t *ts_ptr = dyn_table_get(&alive, &prev->uid);
+            if (!ts_ptr){
+                SLOG_INFO("[run] removing candidate from queue, due its un-aliveness %u", prev->uid);
                 dyn_queue_pop(&peers, NULL);
                 free(incoming);
                 continue;

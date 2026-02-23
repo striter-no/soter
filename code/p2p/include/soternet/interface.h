@@ -53,6 +53,15 @@ int soter_client(
     }
 
     client->kp = soter_keypair_make();
+    SLOG_DEBUG("[interface] my pubkey: %02x%02x%02x%02x%02x%02x%02x%02x...",
+           client->kp.public_key[0],
+           client->kp.public_key[1],
+           client->kp.public_key[2],
+           client->kp.public_key[3],
+           client->kp.public_key[4],
+           client->kp.public_key[5],
+           client->kp.public_key[6],
+           client->kp.public_key[7]);
 
     if (0 > p2p_psystem_init(&client->psyst, &client->net_client, client->kp)){
         SLOG_ERROR("soter_client: failed to create peer system");
@@ -136,12 +145,15 @@ p2p_peer *soter_peer(
 
 int soter_p2p_connect(
     soter *client,
-    uint32_t     other_UID,
-    naddr_t      other_addr,
+    uint32_t      other_UID,
+    naddr_t       other_addr,
     unsigned char other_pubkey[SOTER_PUBKEY_BYTES],
-    int         *evfd
+    int          *evfd,
+
+    soter_session_keys *known_sk
 ){
-    if (0 > p2p_psystem_punchnat(&client->psyst, other_UID, other_addr, other_pubkey, evfd, 1)){
+    SLOG_INFO("performing punch NAT");
+    if (0 > p2p_psystem_punchnat(&client->psyst, other_UID, other_addr, other_pubkey, evfd, 1, known_sk)){
         SLOG_ERROR("soter_client: failed to request NAT punch");
         return -1;
     }
@@ -207,23 +219,33 @@ int soter_wait_pack(
 }
 
 int soter_send(
-    soter *client,
-    uint32_t     other_UID,
-    void        *data,
-    size_t       size
+    soter    *client,
+    uint32_t  other_UID,
+    void     *data,
+    size_t    size,
+    soter_session_keys sk,
+    uint32_t  seq
 ){
     udp_packet *pack = udp_make_pack(
-        0, 
-        client->net_client.UID,  
+        seq,
+        client->net_client.UID,
         other_UID,
         P2P_PACK_DATA, 
         data, 
         size
     );
 
-    if (0 > p2p_rudp_newpack(&client->rudp, pack, other_UID)){
+    udp_packet *encr = soter_crypto_pack(&sk, pack, true);
+    free(pack);
+
+    if (!encr){
+        SLOG_ERROR("soter_client: Failed to encrypt pack");
+        return -1;
+    }
+
+    if (0 > p2p_rudp_newpack(&client->rudp, encr, other_UID)){
         SLOG_ERROR("soter_client: Failed to send pack");
-        free(pack);
+        free(encr);
         return -1;
     }
 
@@ -239,16 +261,25 @@ int soter_recv(
 ){
     udp_packet *out = NULL;
     p2p_rudp_chan_getpack(chan, &out);
+    
     if (!out){
         SLOG_ERROR("soter_client: Failed to get packet");
         return -1;
     }
 
-    *data = malloc(out->d_size);
-    *size = out->d_size;
-    memcpy(*data, out->data, out->d_size);
-
+    udp_packet *out2 = soter_uncrypt_pack(&chan->sk, out, false);
     free(out);
+
+    if (!out2){
+        SLOG_ERROR("soter_client: Failed uncrypt packet");
+        return -1;
+    }
+
+    *data = malloc(out2->d_size);
+    *size = out2->d_size;
+    memcpy(*data, out2->data, out2->d_size);
+
+    free(out2);
     return 0;
 }
 

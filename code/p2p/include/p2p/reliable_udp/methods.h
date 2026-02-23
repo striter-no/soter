@@ -37,6 +37,8 @@ typedef struct {
     int        sended_fd;
     uint32_t   UID, senderUID;
     nnet_fd    nfd;
+
+    soter_session_keys sk;
 } p2p_rudp_channel;
 
 typedef struct {
@@ -92,7 +94,11 @@ int p2p_rudpdisp_getchan(
     return 0;
 }
 
-void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, uint32_t senderUID, nnet_fd nfd){
+void p2p_rudp_chaninit(
+    p2p_rudp_channel *out, 
+    uint32_t UID, uint32_t senderUID, 
+    nnet_fd nfd, soter_session_keys sk
+){
     out->next_seq = 0;
     out->last_ack_received = 0;
     out->last_ack_sent     = 0;
@@ -109,6 +115,7 @@ void p2p_rudp_chaninit(p2p_rudp_channel *out, uint32_t UID, uint32_t senderUID, 
     out->nfd = nfd;
     out->last_recved_seq  = UINT32_MAX;
     out->senderUID = senderUID;
+    out->sk = sk;
 }
 
 int p2p_rudpdisp_newchan(
@@ -117,8 +124,14 @@ int p2p_rudpdisp_newchan(
     nnet_fd               nfd,
     p2p_rudp_channel    **out
 ){
+    p2p_peer *peer;
+    if ((peer = p2p_psystem_peer(syst->psys, peer_uid)) == NULL){
+        SLOG_ERROR("failed to init new channel for unknown peer: %u", peer_uid);
+        return -1;
+    }
+
     p2p_rudp_channel chan;
-    p2p_rudp_chaninit(&chan, peer_uid, syst->client->UID, nfd);
+    p2p_rudp_chaninit(&chan, peer_uid, syst->client->UID, nfd, peer->sk);
 
     prot_table_set(&syst->channels, &peer_uid, &chan);
     write(syst->newchan_fd, &(uint64_t){1}, 8);

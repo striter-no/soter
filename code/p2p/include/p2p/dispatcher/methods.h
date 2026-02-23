@@ -187,8 +187,8 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
             return false;
         }
 
-        
-        int stfd = p2p_peer_register(disp->psys, other_addr, other_uid, P2P_STAT_PUNCHING, -1, peer_pubk);
+        soter_session_keys sk;
+        int stfd = p2p_peer_register(disp->psys, other_addr, other_uid, P2P_STAT_PUNCHING, -1, peer_pubk, &sk);
         SLOG_DEBUG("[p2pnp][sserv] stfd: %i (%s:%u %u)", stfd, other_addr.ip.v4.ip, other_addr.ip.v4.port, other_uid);
         
         gossip_new_entry(disp->gossip, entry);
@@ -198,6 +198,7 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
             .stfd = stfd,
             .ip = other_addr,
             .UID = other_uid,
+            .sk = sk
         };
         memcpy(gstate.pubkey, state.pubkey, SOTER_PUBKEY_BYTES);
         

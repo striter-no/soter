@@ -9,7 +9,7 @@
 #include <sys/eventfd.h>
 
 #include <crypto/system.h>
-#include <crypto/hanshake.h>
+#include <crypto/handshake.h>
 
 #ifndef P2P_PEER_DEAD_DT
 #define P2P_PEER_DEAD_DT 5
@@ -92,6 +92,44 @@ int p2p_psystem_stunperform(
     return p2pnp_udp_stun(sys->p_client, stun);
 }
 
+
+int p2p_peer_handshake(
+    p2p_peers_system *sys,
+    uint32_t peer_uid,
+    unsigned char peer_pubk[SOTER_PUBKEY_BYTES],
+    soter_session_keys *sk
+){
+    if (peer_uid < sys->p_client->UID){ // server
+        if (0 > soter_handshake_server(
+            peer_pubk,
+            &sys->kp,
+            sk
+        )){
+            SLOG_ERROR("[p2p][punchn][serv] failed to perform handshake");
+            return -1;
+        }
+        SLOG_DEBUG("[p2p] handshaken as server, peer: %02x%02x%02x%02x%02x%02x%02x%02x", 
+            peer_pubk[0], peer_pubk[1], peer_pubk[2], peer_pubk[3],
+            peer_pubk[4], peer_pubk[5], peer_pubk[6], peer_pubk[7]
+        );
+    } else { // client
+        if (0 > soter_handshake_client(
+            peer_pubk,
+            &sys->kp,
+            sk
+        )){
+            SLOG_ERROR("[p2p][punchn][cli] failed to perform handshake");
+            return -1;
+        }
+        SLOG_DEBUG("[p2p] handshaken as server, peer: %02x%02x%02x%02x%02x%02x%02x%02x", 
+            peer_pubk[0], peer_pubk[1], peer_pubk[2], peer_pubk[3],
+            peer_pubk[4], peer_pubk[5], peer_pubk[6], peer_pubk[7]
+        );
+    }
+    return 0;
+}
+
+
 // * send punch message
 int p2p_psystem_punchnat(
     p2p_peers_system *sys,
@@ -99,7 +137,8 @@ int p2p_psystem_punchnat(
     naddr_t           peer_addr,
     unsigned char    *peer_pubk,
     int              *evfd,
-    int               packs_n
+    int               packs_n,
+    soter_session_keys *sk
 ){
     p2p_peer peer;
     peer.fd = (nnet_fd){0};
@@ -114,25 +153,14 @@ int p2p_psystem_punchnat(
     peer.last_seq  = 0;
     peer.status_evfd = evfd == NULL? eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK): *evfd;
     memcpy(peer.pubkey, peer_pubk, SOTER_PUBKEY_BYTES);
-
-    if (peer_uid < sys->p_client->UID){ // server
-        if (0 > soter_handshake_server(
-            peer_pubk,
-            &sys->kp,
-            &peer.sk
-        )){
-            SLOG_ERROR("[p2p][punchn][serv] failed to perform handshake");
+    if (!sk){
+        SLOG_DEBUG("[punchnat] handshaking");
+        if (0 > p2p_peer_handshake(sys, peer_uid, peer_pubk, &peer.sk)){
+            SLOG_ERROR("[punchnat] handshake failed");
             return -1;
         }
-    } else { // client
-        if (0 > soter_handshake_client(
-            peer_pubk,
-            &sys->kp,
-            &peer.sk
-        )){
-            SLOG_ERROR("[p2p][punchn][cli] failed to perform handshake");
-            return -1;
-        }
+    } else {
+        peer.sk = *sk;
     }
 
     // add to pending
@@ -148,7 +176,8 @@ int p2p_peer_register(
     p2p_status        status,
     int               efd,
 
-    const unsigned char *peer_pubk
+    const unsigned char *peer_pubk,
+    soter_session_keys  *out_sk
 ){
     if (!sys) return -1;
 
@@ -170,6 +199,11 @@ int p2p_peer_register(
             SLOG_ERROR("[p2p][reg][serv] failed to perform handshake");
             return -1;
         }
+
+        SLOG_DEBUG("[p2p][reg] handshaken as server, peer: %02x%02x%02x%02x%02x%02x%02x%02x", 
+            peer_pubk[0], peer_pubk[1], peer_pubk[2], peer_pubk[3],
+            peer_pubk[4], peer_pubk[5], peer_pubk[6], peer_pubk[7]
+        );
     } else { // client
         if (0 > soter_handshake_client(
             peer_pubk,
@@ -179,8 +213,14 @@ int p2p_peer_register(
             SLOG_ERROR("[p2p][reg][cli] failed to perform handshake");
             return -1;
         }
+
+        SLOG_DEBUG("[p2p][reg] handshaken as client, peer: %02x%02x%02x%02x%02x%02x%02x%02x", 
+            peer_pubk[0], peer_pubk[1], peer_pubk[2], peer_pubk[3],
+            peer_pubk[4], peer_pubk[5], peer_pubk[6], peer_pubk[7]
+        );
     }
 
+    *out_sk = peer.sk;
     // add to pending
     if (status == P2P_STAT_PUNCHING){
         prot_array_push(&sys->pushing_peers, &peer);

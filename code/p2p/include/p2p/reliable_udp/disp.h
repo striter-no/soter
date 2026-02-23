@@ -454,6 +454,10 @@ void p2p_rudpdisp_end(
             free(pack);
         }
 
+        for (size_t i = 0; i < chan->pending_queue.array.len; i++){
+            free(((p2p_rudp_pending_pkt*)prot_array_at(&chan->pending_queue, i))->copy_pack);
+        }
+
         prot_array_end(&chan->pending_queue);
         prot_queue_end(&chan->network_queue);
         prot_array_end(&chan->reorder_buffer);

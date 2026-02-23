@@ -93,7 +93,7 @@ static void p2p_dispatcher_stateserving(p2p_dispatcher *disp){
 
     udp_packet *pack = udp_make_pack(
         0, disp->p_client->UID, 
-        0, P2P_PACK_STATE, &disp->p_client->UID, sizeof(data)
+        0, P2P_PACK_STATE, data, sizeof(data)
     );
 
     udp_pack_send(disp->p_client, pack, disp->state_nfd);
