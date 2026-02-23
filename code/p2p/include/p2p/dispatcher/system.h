@@ -85,13 +85,15 @@ static void p2p_dispatcher_gossiping(p2p_dispatcher *disp){
 }
 
 static void p2p_dispatcher_stateserving(p2p_dispatcher *disp){
+    // SLOG_DEBUG("p2p_dispatcher_stateserving performed");
+    
     unsigned char data[sizeof(uint32_t) + SOTER_PUBKEY_BYTES] = {0};
     memcpy(data, &disp->p_client->UID, sizeof(uint32_t));
     memcpy(data + sizeof(uint32_t), &disp->psys->kp.public_key, SOTER_PUBKEY_BYTES);
 
     udp_packet *pack = udp_make_pack(
         0, disp->p_client->UID, 
-        0, P2P_PACK_STATE, &disp->p_client->UID, sizeof(disp->p_client->UID)
+        0, P2P_PACK_STATE, &disp->p_client->UID, sizeof(data)
     );
 
     udp_pack_send(disp->p_client, pack, disp->state_nfd);

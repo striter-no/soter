@@ -18,6 +18,8 @@ int main(void){
         return -1;
     }
 
+    SLOG_INFO("State server started");
+
     p2p_udp    server;
     udp_create(&server, 0);
     udp_bind(&server, addr);
@@ -45,6 +47,7 @@ int main(void){
         }
 
         if (r <= 0) continue;
+        // SLOG_INFO("got event");
 
         nnet_fd from = {0};
         udp_packet *incoming = udp_pack_recv(&server, &from);
@@ -56,7 +59,7 @@ int main(void){
         uint32_t UID = 0;
         
         // if (0 >= netfd_wait(server.fd, POLLIN, -1)) continue;
-        if (sizeof(uint32_t) != incoming->d_size){
+        if (sizeof(uint32_t) + SOTER_PUBKEY_BYTES != incoming->d_size){
             SLOG_WARNING("[run] ignoring corrupted packet");
             continue;
         }
@@ -106,7 +109,7 @@ int main(void){
         uint64_t t = get_timestump();
         dyn_table_set(&alive, &UID, &t);
         dyn_queue_push(&peers, &state);
-        SLOG_INFO("[run] new peer accuired: %s:%u:%u", from_ip.ip.v4.ip, from_ip.ip.v4.port, UID);
+        SLOG_INFO("[run] new peer acquired: %s:%u:%u", from_ip.ip.v4.ip, from_ip.ip.v4.port, UID);
 
         free(incoming);
     }
@@ -115,5 +118,6 @@ int main(void){
     dyn_queue_end(&peers);
     dyn_table_end(&alive);
 
+    SLOG_INFO("State server stopped");
     logger_stop(&SOTER_LOGER);
 }

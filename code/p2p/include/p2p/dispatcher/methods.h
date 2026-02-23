@@ -165,6 +165,7 @@ bool disp_method_state(udp_packet *pkt, p2p_dispatcher *disp, p2p_udp *cli){
 
     p2p_state_peer state;
 
+    SLOG_DEBUG("[disp] method state called");
     if (pkt->d_size != sizeof(state)){
         if (pkt->d_size != 1) SLOG_WARNING("[p2pnp][sserv] ignoring corrupted packet");
         // otherwise it is "0", answer when no peers available

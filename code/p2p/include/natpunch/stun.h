@@ -40,7 +40,7 @@ int p2pnp_udp_stun(
     netfd_wait(client->fd, POLLIN, 10000);
     int r = recvfrom(client->fd.rfd, buf, sizeof(buf), 0, (struct sockaddr*)&from, &from_len);
     
-    printf("stun: %s:%u\n", stun_addr.ip.v4.ip, stun_addr.ip.v4.port);
+    // printf("stun: %s:%u\n", stun_addr.ip.v4.ip, stun_addr.ip.v4.port);
     if (r < (int)sizeof(struct stun_header)) {
         perror("recvfrom");
         return -1;
@@ -49,7 +49,7 @@ int p2pnp_udp_stun(
     struct stun_header *res = (struct stun_header *)buf;
     
     if (ntohs(res->type) != STUN_BINDING_RESPONSE || ntohl(res->magic) != STUN_MAGIC_COOKIE) {
-        SLOG_ERROR("invalid STUN response");
+        SLOG_ERROR("[p2pnp] Invalid STUN response");
         return -1;
     }
 
