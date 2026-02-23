@@ -5,7 +5,7 @@ set -e
 mkdir -p bin
 mkdir -p ./code/p2p/lib
 
-INSTALL_PREFIX="../code/p2p"
+INSTALL_PREFIX="./code/p2p"
 ABSOLUTE_IPREFIX=$(cd ${INSTALL_PREFIX}; pwd)
 
 INSTALL_LIB="${ABSOLUTE_IPREFIX}/lib"
@@ -29,10 +29,3 @@ fi
 
 make && make check 
 make install
-
-cd ..
-rm -rf ./libsodium ./libsodium.tar
-
-mv ./include/* ./code/p2p/include/
-mv ./lib/* ./code/p2p/lib/
-rm -rf ./include ./lib
