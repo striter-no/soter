@@ -32,6 +32,10 @@ uint32_t soter_pubkey_to_uid(const unsigned char *pubkey){
     return uid;
 }
 
+bool soter_pubkey_and_uid_check(const unsigned char *pubkey, uint32_t uid){
+    return uid == soter_pubkey_to_uid(pubkey);
+}
+
 int soter_keypair_store(const soter_keypair *kp, const char *path){
     FILE *f = fopen(path, "w");
     if (!f) return -1;
